@@ -184,7 +184,7 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 | 필드 | 타입 | 비고 |
 |---|---|---|
-| `settlement_run_id` | str | `run_{yyyymmdd}_{ulid}` |
+| `settlement_run_id` | str | `run_{yymmdd}_{ULID 앞 12자}`. §3 |
 | `filter` | SettlementFilter | §6 |
 | `base_currency` | str | 캡 검사와 총액 표시의 기준통화 |
 | `total_amount_minor` | int | 기준통화 환산 총액 |
@@ -266,7 +266,7 @@ ULID를 쓴다. 시간순 정렬이 되고 Firestore 문서 ID로도 무난하�
 | `receipt_id` | `rct_{ulid}` |
 | `claim_id` | `clm_{ulid}` |
 | `claim_request_id` | `crq_{ulid}` |
-| `settlement_run_id` | `run_{yyyymmdd}_{ulid}` |
+| `settlement_run_id` | `run_{yymmdd}_{ULID 앞 12자}` |
 | `draft_id` | `drf_{ulid}` |
 
 ### PayPal 연동 ID
@@ -283,13 +283,17 @@ ULID를 쓴다. 시간순 정렬이 되고 Firestore 문서 ID로도 무난하�
 **PayPal 멱등성에는 30일 창이 있다.** 동일 `sender_batch_id`에 대한 단일 결제 보장은
 30일 이내 사용분에 한한다. 이 기간을 넘겨 같은 배치를 재전송하지 않는다.
 
-**ID 길이는 D2 관통 시 실측한다.** `run_20260816_{26자 ULID}` = 39자, 재발송이면 43자다.
-PayPal 문서에 명시적 상한이 보이지 않으나 거부당할 경우 전원에게 즉시 공유하고 아래
-축약형으로 바꾼다. 형식만 바뀌고 다른 계약은 그대로다.
+**ID 길이 결정 완료 (8/17).** 전체 ULID(26자)로 `settlement_run_id`를 만들면
+`run_20260816_{26자 ULID}` = 39자, `sender_item_id`는 `{settlement_run_id}:{recipient_id}`
+(`recipient_id`도 `rcp_{26자 ULID}` = 30자)까지 합쳐 70자로, PayPal `sender_item_id` 상한
+63자를 넘는다. **`settlement_run_id`는 처음부터 아래 축약형만 쓴다.**
 
 ```
-축약형: run_{yymmdd}_{ULID 앞 12자}     예) run_260816_01K3M9XQ7B2F
+run_{yymmdd}_{ULID 앞 12자}     예) run_260816_01K3M9XQ7B2F
 ```
+
+이러면 `sender_item_id` = `run_{yymmdd}_{ULID 앞 12자}:{recipient_id}` = 23 + 1 + 30 = 54자,
+재발송(`:r{n}`)을 붙여도 63자 안에 들어온다. 형식만 바뀌고 다른 계약은 그대로다.
 
 ---
 

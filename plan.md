@@ -64,14 +64,14 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 
 | # | 항목 | 누가 |
 |---|---|---|
-| 1 | **`sender_item_id` 길이 초과 결정** — 70자 > 상한 63자. 축약형 채택 여부 | 전원 |
-| 2 | Track A 델타 3건 확정본 반영 여부 | 전원 |
-| 3 | OpenAPI 생성 → fixture 반환 스텁 배포 (A·B 언블록) | C |
-| 4 | B가 `openapi-typescript`, A가 스키마 import로 S0 완료 판정 | A·B |
+| 1 | Track A 델타 3건 확정본 반영 여부 | 전원 |
+| 2 | OpenAPI 생성 → fixture 반환 스텁 배포 (A·B 언블록) | C |
+| 3 | B가 `openapi-typescript`, A가 스키마 import로 S0 완료 판정 | A·B |
 
-1번은 D2 이전에 정해야 한다. `sender_item_id`는 멱등성 키라 송금이 한 번 나간 뒤에는
-형식을 못 바꾼다. 현재 `src/schemas/models.py`의 `sender_item_id`에는 길이 제약이 없어
-형식 결정이 그대로 열려 있다.
+**`sender_item_id` 길이 초과는 8/17에 해소됐다.** `settlement_run_id`를 축약형
+(`run_{yymmdd}_{ULID 앞 12자}`, 23자)으로만 쓰기로 정해 `sender_item_id`가 54자(재발송
+포함 57자)로 상한 63자 안에 들어온다. `rules/schema-contract.md` §2·§3에 반영, fixture
+8종도 이 형식으로 갱신했다.
 
 문서가 `api/src/...`로 쓰는 경로는 `payflow-backend` 레포 루트의 `src/...`다.
 `api`는 디렉터리가 아니라 서비스 이름이다.
@@ -233,9 +233,10 @@ Slack은 실제 팀 워크스페이스가 아니라 **데모용을 새로 판다
 - [x] **Firestore 컬렉션 · 필드 · 상태 enum** — 컬렉션 9종. 상태값은 **전부 `UPPER_SNAKE`**,
       상태 필드 이름은 전 컬렉션 `status`
 - [x] **ID 체계** — ULID 기반. `sender_batch_id = {run_id}`,
-      `sender_item_id = {run_id}:{recipient_id}`
-      ⚠️ **길이 초과 미해결** — `sender_item_id` 70자 > PayPal 상한 63자. 축약형 채택 여부가
-      D2 관통 전에 결정돼야 한다 (`journal/2026-08-16.md` 14번)
+      `sender_item_id = {run_id}:{recipient_id}`.
+      `settlement_run_id`는 축약형(`run_{yymmdd}_{ULID 앞 12자}`, 23자)만 쓴다 — 전체
+      ULID면 `sender_item_id`가 70자로 PayPal 상한 63자를 넘는다 (8/17 해소,
+      `journal/2026-08-16.md` 14번 → `journal/2026-08-17.md`)
 - [x] **금액 표현 확인** — `{amount_minor: int, currency: str}`. 환율은 문자열 + `Decimal`,
       항목별 환산 후 합산
 - [x] **타임스탬프** — UTC 저장, 표시만 KST. 예외는 `receipts.transaction_date`(`date`) 하나
@@ -438,7 +439,6 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 
 | 항목 | 필요 시점 |
 |---|---|
-| **`sender_item_id` 길이** | D2 이전 — 70자 > 상한 63자. 축약형 채택 여부 |
 | **Track A 델타 3건** | D2 이전 — 확정본 반영 여부 |
 | 업무용/개인용 오판을 어느 단계에서 거를지 | D5 |
 
@@ -455,3 +455,4 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 | 영문 제출 README 위치 | **`payflow-backend`** |
 | Slack 워크스페이스 | **데모용 신규** — 실 데이터가 섞이지 않고 인젝션 테스트가 자유롭다 |
 | 스캐폴딩 | **별도 단계 없음** — 각 트랙이 D1~D2에 자기 레포를 직접 세운다 |
+| `settlement_run_id` 형식 | **축약형만 쓴다** (`run_{yymmdd}_{ULID 앞 12자}`) — 전체 ULID면 `sender_item_id`가 PayPal 상한 63자를 넘는다 |
