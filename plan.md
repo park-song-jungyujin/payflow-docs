@@ -2,13 +2,13 @@
 
 3인 병렬 작업 계획. 마감 **2026-09-01 09:00 KST**, 작성 시점 2026-08-16 기준 **16일**.
 
-전제: 풀타임 3인. 담당자 배정은 트랙 라벨(A/B/C)로 두고 팀이 채운다.
+전제: 풀타임 3인.
 
 | 트랙 | 담당 | 한 줄 요약 |
 |---|---|---|
-| **A** | | 청구자 경험 — Slack 인입부터 청구 항목 확정까지 |
-| **B** | | 집행자 경험 — 매칭부터 대시보드 승인 카드까지 |
-| **C** | | 돈과 안전 — 토큰·게이트·송금·인프라 |
+| **A** | 정유진 | 청구자 경험 — Slack 인입부터 청구 항목 확정까지 |
+| **B** | 박수현 | 집행자 경험 — 매칭부터 대시보드 승인 카드까지 |
+| **C** | 송재훈 | 돈과 안전 — 토큰·게이트·송금·인프라 |
 
 ## 진행 현황
 
@@ -16,8 +16,8 @@
 
 | Phase | 상태 |
 |---|---|
-| **Phase 0** 계약 (D1) | 🟡 **진행 중** — 문서·규칙·결정은 완료, 계정·스키마·인프라 미착수 |
-| **Phase 1** 리스크 관통 (D2~D4) | ⬜ 대기 |
+| **Phase 0** 계약 (D1) | ✅ **완료** — 담당 배정, 계정 3종, 스키마 계약, GCP 부트스트랩, OIDC 관통 |
+| **Phase 1** 리스크 관통 (D2~D4) | 🟡 **진행 중** — 순위 0·2 관통. 남은 것은 fixture 스텁 · 403 · Slack · 파싱 |
 | **Phase 2** 기능 구현 (D5~D9) | ⬜ 대기 |
 | **Phase 3** 통합 (D10~D12) | ⬜ 대기 |
 | **Phase 4** 제출물 (D13~D14) | ⬜ 대기 |
@@ -41,27 +41,42 @@
 
 **결정 8건** — 아래 [확정된 것](#확정된-것) 참조
 
-### ⬜ 코드
+**스키마 계약** — [`rules/schema-contract.md`](rules/schema-contract.md)에 확정본.
+컬렉션 9종 · ID 체계 · 환율 · 계정과목 라우팅 · 승인 토큰 · 라우트 · 환경변수 · fixture 8종
 
-레포 3개 모두 `README.md`와 `CLAUDE.md`뿐이다. **소스 0줄.**
+**GCP 부트스트랩** — 프로젝트 `payflow-hackathon-2026`, API 4종 활성화,
+Firestore Native(`asia-northeast3`), Terraform·uv 설치. 전 과정 `infra/gcp-bootstrap.sh`로 재현 가능
+
+**담당 배정과 계정** — A 정유진 · B 박수현 · C 송재훈. GCP 결제 연결,
+PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
+
+### 코드
 
 | 레포 | 상태 |
 |---|---|
-| `payflow-frontend` | 빈 상태 |
-| `payflow-backend` | 빈 상태 |
-| `payflow-agent` | 빈 상태 |
+| `payflow-backend` | 🟡 `backend/`에 FastAPI 스텁(`src/main.py`, `Dockerfile`, Python 3.12 핀). `payflow-api`로 Cloud Run 배포됨. 멱등성 검증 스크립트 1개 |
+| `payflow-frontend` | ⬜ 빈 상태 |
+| `payflow-agent` | ⬜ 빈 상태 |
 
 별도 스캐폴딩 단계를 두지 않기로 했다. 각 트랙이 D1~D2에 자기 레포를 직접 세운다.
 
-### 🔴 다음 액션 — D1 착수 블로커
+### 🔴 다음 액션
 
 | # | 항목 | 누가 |
 |---|---|---|
-| 1 | **담당자 A/B/C 배정** | 팀 |
-| 2 | **GCP 결제 계정** — 해커톤 크레딧 여부 확인 | 팀 |
-| 3 | 계정 3종 발급 (GCP · PayPal Sandbox · Slack) | 전원 분담 |
-| 4 | `gcloud` CLI · Terraform 설치 | C |
-| 5 | 스키마 합의 10항목 | 전원 |
+| 1 | **`sender_item_id` 길이 초과 결정** — 70자 > 상한 63자. 축약형 채택 여부 | 전원 |
+| 2 | Track A 델타 3건 확정본 반영 여부 | 전원 |
+| 3 | **디렉터리 경로 불일치** — 계약은 `api/src/...`, 실제 레포는 `backend/src/...` | 전원 |
+| 4 | api v0.1.0 태그 → OpenAPI 생성 → fixture 반환 스텁 | C |
+
+1번은 D2 이전에 정해야 한다. `sender_item_id`는 멱등성 키라 송금이 한 번 나간 뒤에는
+형식을 못 바꾼다.
+
+3번은 지금 정하면 5분, 세 트랙이 각자 디렉터리를 만든 뒤에 정하면 이동 + import 경로
+수정이다. 문서를 `backend/`로 맞추든 레포를 `api/`로 맞추든 한쪽으로 통일한다.
+
+**Phase 0 착수 블로커는 전부 해소됐다.** 담당자 배정, GCP 결제 연결, 계정 3종,
+`gcloud`·Terraform 설치, 스키마 계약 10항목, OIDC 관통까지 끝났다.
 
 ## 선행 결정: 에이전트 3개
 
@@ -165,20 +180,20 @@ main 직푸시 금지, 다른 사람이 한 번 본다.
 걸 붙였는데 필드 이름이 다르면 그 나흘이 날아간다. 흩어지기 전에 두 관문을 통과한다.
 
 ```
-지금 즉시 — 외부 대기시간이 있어 제일 먼저 걸어둔다
+✅ 계정 발급 — 외부 대기시간이 있어 제일 먼저 걸었다
 ├─ GCP 프로젝트 + 결제 연결 + API 활성화 (Vertex · Firestore · Tasks · Run)
 ├─ PayPal Sandbox 비즈니스 1 + 수신 가상계정 3
 └─ Slack 데모 워크스페이스 + 앱 + 서명 시크릿
 
         ↓ 발급 기다리는 동안
 
-전원 합석 — 2~3시간, 코드 0줄
-├─ 담당자 트랙 배정
+✅ 전원 합의 — 코드 0줄
+├─ 담당자 트랙 배정 (A 정유진 · B 박수현 · C 송재훈)
 ├─ Firestore 컬렉션 · 필드 · 상태 enum
 ├─ Pydantic 스키마
 ├─ API 라우트 목록 + 디렉터리 소유권
 ├─ 에이전트 3개 입출력 계약
-└─ 데모 데이터셋 6종 = fixture
+└─ 데모 데이터셋 8종 = fixture
 
         ↓ ── S0 ──
 
@@ -211,22 +226,26 @@ Slack은 실제 팀 워크스페이스가 아니라 **데모용을 새로 판다
 
 #### 합의해야 할 계약
 
-- [ ] **Firestore 컬렉션 · 필드 · 상태 enum** — `draft/approved/executing/settled/failed`,
-      `PENDING/REMINDED/RESPONDED/EXPIRED`를 **대소문자까지** 확정. 문자열 하나 어긋나면
-      통합 때 조용히 실패한다
-- [ ] **ID 체계** — `settlement_run_id`, `claim_id`, `receipt_id`,
-      `sender_item_id = f"{run_id}:{recipient_id}"`. 멱등성이 걸려 있어 C만의 문제가 아니다
-- [ ] **금액 표현 확인** — `{amount_minor: int, currency: str}`. `money-safety.md`가 이미 정했다
-- [ ] **타임스탬프** — UTC 저장, 표시만 KST
-- [ ] **계정과목 enum** — 지급수수료 · 복리후생비 · 여비교통비 · 소모품비 · 광고선전비 ·
-      지급임차료 + `미분류`. 파싱 신뢰도가 낮으면 `미분류`로 두고 집행자 에이전트가 판단
-- [ ] **`SettlementFilter` 스키마** — 자연어 라우팅이 만들 수 있는 유일한 객체
-- [ ] **에이전트 3개 입출력** — 각자 `api`와의 계약만 맞추면 된다. 서로를 안 부르므로
-      에이전트 간 계약은 없다
-- [ ] **API 라우트 목록 + 디렉터리 소유권** — 빈 디렉터리와 `__init__.py`를 만들어 커밋해두면
-      충돌이 물리적으로 안 난다
-- [ ] **환경변수 이름** — `REMINDER_DELAY_SECONDS`, 모델 ID, 한도 캡 3종 → `.env.example`
-- [ ] **데모 데이터셋 6종** → `api/tests/fixtures/`. 스텁도 이걸 반환하고 최종 데모도 이걸 쓴다.
+**10항목 전부 [`rules/schema-contract.md`](rules/schema-contract.md)에 확정본으로 들어갔다.**
+아래는 무엇을 덮었는지 확인용 목록이고, 정의 자체는 확정본이 단일 소스다.
+
+- [x] **Firestore 컬렉션 · 필드 · 상태 enum** — 컬렉션 9종. 상태값은 **전부 `UPPER_SNAKE`**,
+      상태 필드 이름은 전 컬렉션 `status`
+- [x] **ID 체계** — ULID 기반. `sender_batch_id = {run_id}`,
+      `sender_item_id = {run_id}:{recipient_id}`
+      ⚠️ **길이 초과 미해결** — `sender_item_id` 70자 > PayPal 상한 63자. 축약형 채택 여부가
+      D2 관통 전에 결정돼야 한다 (`journal/2026-08-16.md` 14번)
+- [x] **금액 표현 확인** — `{amount_minor: int, currency: str}`. 환율은 문자열 + `Decimal`,
+      항목별 환산 후 합산
+- [x] **타임스탬프** — UTC 저장, 표시만 KST. 예외는 `receipts.transaction_date`(`date`) 하나
+- [x] **계정과목 enum** — 코드값 7종(`PAYMENT_FEE` … `UNCLASSIFIED`) + 표시명 매핑.
+      분류는 결정론적 신호(1단계) → `llm_confidence`(2단계) 순서
+- [x] **`SettlementFilter` 스키마** — `extra="forbid"`. 기간 기준은 `receipts.transaction_date`
+- [x] **에이전트 3개 입출력** — `agent_drafts.payload` 최상위 키만 계약. 응답 본문은 무의미
+- [x] **API 라우트 목록 + 디렉터리 소유권** — 공개 11개 + Cloud Tasks 전용 4개.
+      URL 경로와 핸들러 소유가 다를 수 있다 (`/settlements/runs/{run_id}/approve` → C)
+- [x] **환경변수 이름** — 확정본 §11이 `.env.example` 원본이다
+- [x] **데모 데이터셋 8종** → `api/tests/fixtures/`. 스텁도 이걸 반환하고 최종 데모도 이걸 쓴다.
       따로 만들면 두 번 만든다
 
 #### 완료 판정
@@ -246,17 +265,22 @@ Slack은 실제 팀 워크스페이스가 아니라 **데모용을 새로 판다
 
 `workflow.md` 검증 순서를 따른다. **기능이 아니라 리스크가 큰 순서다.**
 
-| 순위 | 항목 | 트랙 | 기한 |
-|---|---|---|---|
-| 0 | **Cloud Tasks → 비공개 Cloud Run OIDC 호출 성공** | C | D1 |
-| 1 | api 스텁 배포 (A·B 언블록) | C | D2 |
-| 2 | PayPal 샌드박스 payout 성공 + 동일 `sender_batch_id` 재시도 무해 | C | D2 |
-| 3 | 승인 토큰 없이 `/payouts` → 403 | C | D2 |
-| 4 | Slack 서명검증 → enqueue → 3초 내 ack | A | D3 |
-| 5 | 영수증 이미지 → 구조화 JSON + 계정과목 → Firestore | A | D4 |
+| 순위 | 항목 | 트랙 | 기한 | 상태 |
+|---|---|---|---|---|
+| 0 | **Cloud Tasks → 비공개 Cloud Run OIDC 호출 성공** | C | D1 | ✅ `payflow-api` + `payflow-queue`로 200 확인 |
+| 1 | api 스텁 배포 (A·B 언블록) | C | D2 | 🟡 서비스는 떴으나 **fixture 반환 엔드포인트는 아직** |
+| 2 | PayPal 샌드박스 payout 성공 + 동일 `sender_batch_id` 재시도 무해 | C | D2 | ✅ 재전송은 `400`으로 거부 |
+| 3 | 승인 토큰 없이 `/payouts` → 403 | C | D2 | ⬜ |
+| 4 | Slack 서명검증 → enqueue → 3초 내 ack | A | D3 | ⬜ |
+| 5 | 영수증 이미지 → 구조화 JSON + 계정과목 → Firestore | A | D4 | ⬜ |
 
-0번이 안 풀리면 A의 재촉 루프와 파싱 파이프라인이 통째로 막힌다. `agent` 서비스는
-비공개여야 하는데, 비공개 Cloud Run을 큐가 호출하려면 OIDC 토큰과 audience 설정이 필요하다.
+0번이 안 풀리면 A의 재촉 루프와 파싱 파이프라인이 통째로 막힌다. **D1에 뚫렸다** —
+IAM 바인딩 전파 지연으로 첫 태스크가 1분간 403을 반복한 것 외에는 걸림돌이 없었다.
+
+2번에서 나온 것 하나 — PayPal은 동일 `sender_batch_id` 재전송을 "같은 배치로 200 재응답"이
+아니라 **`400 SENDER_BATCH_ID already exists`로 거부**한다. `api/src/payouts/`는 이 에러를
+실패가 아니라 "이미 실행됨" 신호로 읽고 배치 조회로 넘어가야 한다. 그냥 예외로 두면
+재시도 경로에서 정상 건이 실패로 기록된다.
 
 2·3번을 D2에 끝낸다. 2번은 유일한 외부 의존성이고, 3번은 구현 30분에 발표 임팩트가 가장 크다.
 
@@ -413,14 +437,15 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 
 | 항목 | 필요 시점 |
 |---|---|
-| **담당자 3인 트랙 배정** | D1 — 유일하게 남은 착수 블로커 |
-| **GCP 결제 계정** | D1 — 해커톤 크레딧 여부 및 결제 수단 |
+| **`sender_item_id` 길이** | D2 이전 — 70자 > 상한 63자. 축약형 채택 여부 |
+| **Track A 델타 3건** | D2 이전 — 확정본 반영 여부 |
 | 업무용/개인용 오판을 어느 단계에서 거를지 | D5 |
 
 ### 확정된 것
 
 | 항목 | 결정 |
 |---|---|
+| 트랙 담당 | **A 정유진 · B 박수현 · C 송재훈** |
 | 해커톤 카테고리 | **Taskmaster** — 40% 비중인 "반복 작업을 대신 끝내는가"에 정확히 맞는다 |
 | 계정과목 자동 매핑 | **포함** — XLSX가 세무사 전달용인데 계정과목이 없으면 엑셀 덤프에 불과하다 |
 | 집행자 자연어 라우팅 | **포함** — 단 `SettlementFilter` 변환으로 범위를 한정한다 |

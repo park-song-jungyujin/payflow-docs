@@ -5,7 +5,9 @@
 | 날짜 | 작업 |
 |---|---|
 | 2026-08-16 | 문서 기반 구축 — 기획 README, 개발 규칙 5종, 레포별 `CLAUDE.md` 및 `docs` submodule 연결. 마크다운 200줄 제한은 `CLAUDE.md`에만 적용하도록 축소. 3인 병렬 구현 계획(`plan.md`) 작성 — 에이전트 3분할 결정. D1 착수 준비 완료 — 결정 8건 확정, 규칙 4곳 갱신, 회의록 아카이빙, 진행 현황 표시 |
-| 2026-08-16 | GCP 프로젝트(`payflow-hackathon-2026`) 부트스트랩 — Terraform·uv·ADC·API 4종·Firestore(서울) 세팅을 `docs/infra/gcp-bootstrap.sh`로 스크립트화. 스키마 계약 초안(`docs/schema-contract-draft.md`) 작성 — 전원 합석 회의 대기 |
+| 2026-08-16 | GCP 프로젝트(`payflow-hackathon-2026`) 부트스트랩 — Terraform·uv·ADC·API 4종·Firestore(서울) 세팅을 `docs/infra/gcp-bootstrap.sh`로 스크립트화. 스키마 계약 초안(`docs/schema-contract-draft.md`) 작성 — 전원 합의 대기 |
 | 2026-08-16 | 스키마 계약 확정본을 `rules/schema-contract.md`에 반영, `rules/` 나머지 4종과 대조해 `agent-tools.md`·`money-safety.md` 불일치 2건 수정 |
 | 2026-08-16 | `backend/.env` 생성. `payflow-api` FastAPI 스텁을 비공개 Cloud Run에 배포하고 Cloud Tasks OIDC 관통(403→200) 확인 |
 | 2026-08-16 | PayPal 샌드박스 payout 멱등성 확인 — 동일 `sender_batch_id` 재전송은 400 에러로 거부되어 중복 송금 없음을 검증 |
+| 2026-08-16 | Track A 스키마 초안을 확정본에 병합하고 폐기 — 문서 단일화. PayPal ID 길이 정정(`sender_item_id` 상한 63자, 확정본 형식은 70자로 초과) 및 Track A 델타 3건 제안 |
+| 2026-08-16 | D1 착수 블로커 5개 해소 — 트랙 배정(A 정유진 · B 박수현 · C 송재훈), GCP 결제 연결, PayPal Sandbox·Slack 계정 발급 완료. `plan.md`·`README.md` 미결 표를 남은 항목만으로 정리 |

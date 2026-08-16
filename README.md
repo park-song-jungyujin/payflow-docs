@@ -202,8 +202,7 @@ sequenceDiagram
 
 | 항목 | 내용 |
 | --- | --- |
-| 담당자 배정 | `plan.md`의 트랙 A/B/C에 사람을 채워야 한다 |
+| `sender_item_id` 길이 | 확정본 형식이 70자인데 PayPal 상한은 63자다. D2 이전에 축약형 채택 여부를 정한다 |
 | 업무용/개인용 오판 | 에이전트가 개인 지출을 업무용으로 분류했을 때 걸러내는 단계 |
-| GCP 결제 계정 | 해커톤 크레딧 여부 및 결제 수단 |
 
-**확정된 것** — 카테고리는 Taskmaster, PayPal은 MCP Server 대신 Payouts API 직접 호출(멱등성·게이트·캡을 코드가 통제해야 하므로), 환율은 승인 시점 고정(승인 토큰이 금액 해시에 바인딩되므로), 제출용 영문 README는 `payflow-backend`에 둔다.
+**확정된 것** — 담당은 A 정유진 · B 박수현 · C 송재훈, 카테고리는 Taskmaster, PayPal은 MCP Server 대신 Payouts API 직접 호출(멱등성·게이트·캡을 코드가 통제해야 하므로), 환율은 승인 시점 고정(승인 토큰이 금액 해시에 바인딩되므로), 제출용 영문 README는 `payflow-backend`에 둔다. 스키마 계약은 [`rules/schema-contract.md`](rules/schema-contract.md)가 단일 소스다.
