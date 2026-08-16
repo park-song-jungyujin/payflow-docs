@@ -17,3 +17,4 @@
 | 2026-08-17 | `guards`·`payouts` 스텁 라우트 + 승인 토큰 403 게이트 구현 (`feat/guards-payouts-stub` 브랜치) — DRAFT→APPROVED→EXECUTING CAS, 한도 캡 3종, 감사 로그, TestClient로 8개 경로 검증 |
 | 2026-08-17 | `sender_item_id` 길이 초과(70자 > 상한 63자) 해소 — `settlement_run_id`를 축약형(`run_{yymmdd}_{ULID 앞 12자}`)으로 확정, `rules/schema-contract.md`·`plan.md`·`README.md`·fixture 5개 일괄 반영 |
 | 2026-08-17 | `/tasks/execute-payout`에 PayPal Payouts 실제 호출 + 멱등성 구현 (`feat/paypal-payout-call` 브랜치) — 결정론적 `sender_batch_id`/`sender_item_id`, minor→PayPal 문자열 변환, `/payouts`는 Cloud Tasks 미구성 시 명시적 실패로 전환 |
+| 2026-08-17 | `/tasks/reconcile`·`/webhooks/paypal` 지급 결과 대조 구현 (`feat/paypal-reconcile-webhook` 브랜치) — SUCCESS/FAILED 종결 판정, claim·monthly_paid_minor 롤백, max attempts 강제 종결. `/payouts`에 빠져 있던 monthly_paid_minor 예약 가산도 같이 메꿈 |
