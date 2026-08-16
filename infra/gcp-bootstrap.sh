@@ -37,11 +37,19 @@ gcloud services enable \
   run.googleapis.com \
   --project="$PROJECT_ID"
 
-echo "== Firestore Native DB 생성 (최초 1회만, 이미 있으면 에러 나고 무시해도 됨) =="
-gcloud firestore databases create \
-  --database="(default)" \
-  --location="$REGION" \
-  --type=firestore-native \
-  --project="$PROJECT_ID" || echo "이미 존재하거나 실패 — 위 에러 확인"
+echo "== Firestore Native DB 2개 생성 (dev/deploy, 최초 1회만, 이미 있으면 에러 나고 무시해도 됨) =="
+for DB in dev deploy; do
+  gcloud firestore databases create \
+    --database="$DB" \
+    --location="$REGION" \
+    --type=firestore-native \
+    --project="$PROJECT_ID" || echo "$DB: 이미 존재하거나 실패 — 위 에러 확인"
+done
+
+echo "== dev/deploy DB에 데모 fixture 시딩 (기존 (default) DB는 더 이상 쓰지 않음) =="
+BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../backend" && pwd)"
+for DB in dev deploy; do
+  (cd "$BACKEND_DIR" && GCP_PROJECT="$PROJECT_ID" FIRESTORE_DATABASE="$DB" uv run python scripts/seed_firestore.py)
+done
 
 echo "== 완료: $PROJECT_ID =="

@@ -711,7 +711,7 @@ Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에�
 ```bash
 # --- 실행 환경 ---
 GCP_PROJECT=
-FIRESTORE_DATABASE=(default)
+FIRESTORE_DATABASE=dev          # dev | deploy — 로컬/테스트는 dev, 실 배포는 deploy
 PAYPAL_ENV=sandbox              # sandbox | live
 BASE_CURRENCY=KRW
 
