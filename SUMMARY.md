@@ -12,3 +12,6 @@
 | 2026-08-16 | Track A 스키마 초안을 확정본에 병합하고 폐기 — 문서 단일화. PayPal ID 길이 정정(`sender_item_id` 상한 63자, 확정본 형식은 70자로 초과) 및 Track A 델타 3건 제안 |
 | 2026-08-16 | D1 착수 블로커 5개 해소 — 트랙 배정(A 정유진 · B 박수현 · C 송재훈), GCP 결제 연결, PayPal Sandbox·Slack 계정 발급 완료. `plan.md`·`README.md` 미결 표를 남은 항목만으로 정리 |
 | 2026-08-16 | S0 통과 확인 — `payflow-backend`에 `src/schemas/` Pydantic 모델과 `v0.1.0` 태그. `sender_item_id` 길이 제약은 미구현이라 형식 변경 비용이 아직 0 |
+| 2026-08-17 | `backend`·`agent` 디렉터리 소유권 스캐폴딩 커밋. `CLAUDE.md` 문서 작업 규칙에 "매 작업 종료 시 즉시 반영" 트리거 명시 |
+| 2026-08-17 | 데모 fixture 8종 작성 (`backend/tests/fixtures/`) — 스텁 엔드포인트와 최종 데모가 공유할 골든 패스·오류·403·PayPal 혼재 시나리오 |
+| 2026-08-17 | `guards`·`payouts` 스텁 라우트 + 승인 토큰 403 게이트 구현 (`feat/guards-payouts-stub` 브랜치) — DRAFT→APPROVED→EXECUTING CAS, 한도 캡 3종, 감사 로그, TestClient로 8개 경로 검증 |
