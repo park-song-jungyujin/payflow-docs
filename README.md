@@ -2,357 +2,196 @@
 
 **영수증 한 장부터 송금 완료까지, 공금 정산을 대신 처리하는 AI 에이전트**
 
-PayFlow는 소규모 팀의 비용 정산 과정 — 영수증 수집, 청구서 작성, 결제 내역 대조, 이상 탐지, 일괄 송금, 세무 리포트 — 을 하나의 에이전트 워크플로로 묶습니다. 사람은 **최종 승인 버튼 하나만** 누릅니다.
+소규모 팀의 비용 정산 — 영수증 수집, 청구 항목 생성, 결제 원장 대조, 이상 탐지, 일괄 송금, 세무 리포트 — 을 하나의 워크플로로 묶는다. 사람은 **최종 승인 버튼 하나만** 누른다.
 
-> ⚠️ 현재 상태: **기획 확정 / 구현 착수 전**. 이 문서는 MVP 범위와 시스템 설계를 정의합니다. 미확정 항목은 `TBD`로 표기했습니다.
+> 상태: 구현 착수 전 · 마감 **2026-09-01 09:00 KST**
+> 이 문서는 제품 개요다. 개발 규칙은 [`CLAUDE.md`](CLAUDE.md)와 [`rules/`](rules/)가 우선한다.
 
----
+## 문제
 
-## 목차
+5~20인 스타트업, 개인사업자, 프로젝트 팀 — 공금을 관리하는 소규모 그룹이 매달 반복하는 일:
 
-- [1. 문제](#1-문제)
-- [2. 솔루션](#2-솔루션)
-- [3. 사용자와 역할](#3-사용자와-역할)
-- [4. 핵심 플로우](#4-핵심-플로우)
-- [5. 시스템 아키텍처](#5-시스템-아키텍처)
-- [6. 기술 스택](#6-기술-스택)
-- [7. 데이터 모델](#7-데이터-모델)
-- [8. 보안 및 가드레일](#8-보안-및-가드레일)
-- [9. MVP 범위](#9-mvp-범위)
-- [10. 데모 시나리오](#10-데모-시나리오)
-- [11. 팀 역할분담](#11-팀-역할분담)
-- [12. 로드맵](#12-로드맵-phase-2)
-- [13. 열린 질문 / TODO](#13-열린-질문--todo)
+- 법인카드 한도가 부족해 개인 카드로 선결제하고 수기로 정산을 요청한다
+- 영수증은 Slack에, 인보이스는 이메일에, 원장은 PayPal에 흩어져 있다
+- 정산 대상이 10명이면 송금을 10번 한다
+- 지난달과 같은 인보이스가 또 올라와도 사람이 눈으로 잡아야 한다
+- 청구자는 10건을 올렸는데 8건만 입금된다. 무엇이 왜 빠졌는지 알 방법이 없다
 
----
+## 설계 원칙 3개
 
-## 1. 문제
+1. **에이전트는 돈에 접근하지 않는다.** 코드가 아니라 IAM으로 막혀 있다. 에이전트가 하는 일은 정산안 문서를 쓰는 것이지 돈을 보내는 것이 아니다.
+2. **승인 토큰 없이 송금 엔드포인트는 실행되지 않는다.** 토큰은 LLM 컨텍스트에 들어가지 않는다.
+3. **금액 계산은 LLM이 하지 않는다.** LLM은 판단 근거를 서술하고, 숫자는 코드가 만든다.
 
-5~20인 규모의 초기 스타트업, 개인사업자, 대학생 프로젝트 팀 — **공금을 관리해야 하는 모든 소규모 그룹**은 매달 같은 문제를 반복합니다.
-
-| 페인포인트 | 구체적 증상 |
-| --- | --- |
-| **개인 카드 선결제 정산 피로도** | 법인카드 한도가 부족해 팀원이 개인 카드로 먼저 결제하고, 매달 수기로 정산 요청을 올림 |
-| **흩어진 증빙** | 영수증은 슬랙 DM에, 인보이스는 이메일에, 타임시트는 드라이브에. 일일이 대조해야 함 |
-| **개별 송금의 비효율** | 정산 대상이 10명이면 은행/페이팔에서 10번 송금 |
-| **오지급 · 중복 지급 리스크** | 지난달과 동일한 인보이스가 다시 올라와도 사람이 눈으로 잡아야 함 |
-| **지급 누락** | 청구자는 10건을 올렸는데 8건만 입금됨. 무엇이 왜 빠졌는지 알 방법이 없음 |
-
-특히 **글로벌 프리랜서/외주 인력과 협업하는 팀**은 통화·수취 계정 문제까지 겹쳐 정산 실패율이 높습니다.
-
----
-
-## 2. 솔루션
-
-PayFlow는 정산 사이클을 **네 단계**로 자동화합니다.
-
-```
-① 수집          ② 대조·검증        ③ 승인(HITL)      ④ 실행·기록
-영수증/결제내역  청구 ↔ 원장 매칭   요약 카드 검토     일괄 송금
-→ 구조화 JSON    + 이상 탐지        + 승인 토큰 발급   + 감사 로그 + XLSX
-   (에이전트)      (에이전트)         (사람)            (에이전트)
-```
-
-핵심 설계 원칙:
-
-1. **영수증은 도착 즉시 파싱한다.** 정산 시점에 이미지 수십 장을 처리하지 않도록, Webhook으로 들어온 순간 Gemini 멀티모달로 구조화 JSON을 만들어 저장합니다. 정산 실행은 텍스트 연산만 하므로 빠릅니다.
-2. **송금은 절대 에이전트가 단독으로 완결하지 않는다.** 사람의 승인 토큰 없이는 송금 엔드포인트가 호출되지 않습니다.
-3. **모든 판단에는 근거가 남는다.** "왜 이 금액인가"를 감사 로그로 추적할 수 있어야 합니다.
-
----
-
-## 3. 사용자와 역할
-
-### 집행자 / 승인자 (대표 · 재무 담당자)
-
-- **채널:** 웹 대시보드
-- **니즈:** 중복 결제·오지급 방지, 인보이스 대조와 송금에 드는 시간 절약
-- **하는 일:** 정산 기간 선택 → 요약 카드 검토 → **[최종 승인 및 송금 실행]** 클릭
-
-### 청구자 (외주 프리랜서 · 팀원)
-
-- **채널:** Slack / Discord 봇 (+ 웹사이트 내 청구자용 연동 경로)
-- **청구 방식**
-  - **온라인 결제:** PayPal 기록에서 자동 인식
-  - **오프라인 결제:** 영수증 사진 업로드 → 에이전트가 파싱 → *업무용 / 개인용*을 분류해 청구 항목 생성
-- **니즈:** 지급 누락 방지, 입금 확인
-  - 사진을 올리면 에이전트가 인보이스를 작성하고, 청구자는 **내가 올린 사진과 인보이스가 일치하는지만** 확인
-  - 10건을 올렸는데 8건만 반영됐다면 → 청구자가 즉시 문제 제기 가능
-  - 지급 후 어떤 건이 지급되고 어떤 건이 거부됐는지 에이전트가 정리해 보고
-
----
-
-## 4. 핵심 플로우
-
-### 4.1 청구 생성 (실시간)
-
-```mermaid
-sequenceDiagram
-    participant C as 청구자
-    participant M as Slack/Discord 봇
-    participant A as 청구 생성 에이전트
-    participant DB as Firestore
-
-    C->>M: 영수증 이미지 업로드
-    M->>A: Webhook 이벤트
-    A->>A: Gemini 멀티모달 파싱<br/>(금액/일시/품목/공급자)
-    A->>A: 업무용 / 개인용 분류<br/>계정과목 자동 매핑
-    A->>DB: 청구 항목 JSON 저장 (status: draft)
-    A->>C: 파싱 결과 카드 회신<br/>"이 내용이 맞나요?"
-    alt 파싱 실패 또는 청구자 정정 요청
-        C->>A: 재업로드 / 수정
-        A->>DB: 갱신
-    end
-```
-
-**계정과목 자동 매핑 예시** — `AWS 결제 → 지급수수료`, `팀 회식 → 복리후생비`
-
-### 4.2 정산 실행 (집행자 트리거)
-
-```mermaid
-sequenceDiagram
-    participant E as 집행자
-    participant W as 웹 대시보드
-    participant A as 정산 에이전트
-    participant PP as PayPal API
-    participant C as 청구자
-
-    E->>W: 정산 기간 선택 → [정산 시작]
-    W->>A: 정산 요청
-    A->>A: 기간 내 청구 항목 조회
-    A->>PP: 결제 원장(Transactions) 조회
-    A->>A: 청구 ↔ 원장 양방향 대조
-
-    rect rgb(255, 245, 230)
-    note over A,C: 추적 루프 — 미청구 건 감지
-    A->>C: DM "8/14 AWS ￦145,000 청구가 안 됐어요"
-    alt 무응답
-        A->>C: 1회 재촉
-    end
-    C->>A: [업무용 맞음] 버튼 / 영수증 사진 회신
-    end
-
-    A->>A: 이상 탐지 (중복 청구 / 금액 불일치)
-    A->>W: 요약 카드 렌더링<br/>(정산 명세서 + 위험 알림)
-```
-
-### 4.3 승인 및 송금
-
-```mermaid
-sequenceDiagram
-    participant E as 집행자
-    participant W as 웹 대시보드
-    participant API as 송금 엔드포인트
-    participant PP as PayPal Payouts
-    participant DB as Firestore
-
-    E->>W: 요약 카드 검토 → [최종 승인 및 송금 실행]
-    W->>W: 승인 토큰 발급 (사용자 서명)
-    W->>API: 송금 요청 + 승인 토큰
-    API->>API: 토큰 검증 · 송금 한도 캡 확인
-    alt 토큰 없음 / 한도 초과
-        API-->>W: 거부
-    end
-    API->>PP: Payouts 일괄 송금
-    PP-->>API: batch_id, 건별 결과
-    API->>DB: 트랜잭션 ID + 감사 로그 저장
-
-    rect rgb(230, 245, 255)
-    note over API,PP: 사후 대조
-    API->>PP: 지급 결과 조회
-    alt FAILED / UNCLAIMED 감지
-        API->>PP: 해당 건 취소
-        API->>E: "올바른 주소로 재발송할까요?"
-    end
-    end
-```
-
-### 4.4 재요청 루프 (Human-in-the-Loop)
-
-에이전트는 **집행자가 승인할 때까지** 청구자에게 되묻는 루프를 반복합니다.
-
-| 상황 | 에이전트 동작 |
-| --- | --- |
-| OCR/파싱 실패 | 청구자에게 재업로드 요청 |
-| 청구 내용이 영수증과 어긋남 | 청구자에게 정정 요청 |
-| 결제 기록은 있는데 청구가 없음 | "이거 본인이 결제한 것 맞나요?" DM → 무응답 시 1회 재촉 |
-| 기간 내 끝내 미제출 | 정산 대상에서 제외하고 오프라인 처리로 넘김 |
-
----
-
-## 5. 시스템 아키텍처
+## 아키텍처
 
 ```mermaid
 flowchart TB
-    subgraph CLIENT["인터페이스"]
-        WEB["집행자 웹 대시보드"]
-        BOT["Slack / Discord 봇"]
+    U["브라우저 · Slack"]
+
+    subgraph WEB["payflow-frontend · Next.js"]
+        W["대시보드 · 승인 카드<br/>BFF 프록시 · 시크릿 없음"]
     end
 
-    subgraph RUN["Google Cloud Run (백엔드)"]
-        HOOK["Webhook 핸들러"]
-        ORCH["에이전트 오케스트레이터<br/>(Google ADK)"]
-        GATE["송금 게이트웨이<br/>승인 토큰 검증 · 한도 캡"]
+    subgraph API["payflow-backend · FastAPI"]
+        A["Slack 서명검증 · 승인 토큰 발급/검증<br/>영수증 파싱 · 결정론적 매칭<br/>Firestore 쓰기 단일 창구"]
     end
 
-    subgraph AGENTS["에이전트"]
-        A1["청구 생성 에이전트"]
-        A2["대조 · 이상탐지 에이전트"]
-        A3["지급 목록 생성 에이전트"]
+    subgraph AG["payflow-agent · ADK"]
+        G["에이전트 1개 · 툴 5~6개<br/>판단만, 실행 권한 없음<br/>PayPal 접근 불가"]
     end
 
-    subgraph EXT["외부 서비스"]
-        GEM["Gemini 멀티모달"]
-        PPAY["PayPal Payouts API"]
-        FS[("Firestore")]
-    end
+    EXT["PayPal · Slack · Gemini"]
+    FS[("Firestore · GCS")]
+    CT["Cloud Tasks"]
 
-    BOT --> HOOK --> ORCH
-    WEB --> ORCH
-    WEB -->|승인 토큰| GATE
-
-    ORCH --> A1 & A2 & A3
-    A1 --> GEM
-    A2 --> PPAY
-    A3 --> GATE
-    GATE --> PPAY
-
-    A1 & A2 & A3 --> FS
-    GATE --> FS
-
-    FS -.-> XLSX["XLSX / CSV 내보내기<br/>(세무사 전달용)"]
+    U --> W --> A
+    A --> EXT
+    A --> FS
+    A --> CT --> G
+    G -.->|툴 호출| A
+    G -.->|draft 쓰기| FS
 ```
 
-**설계 포인트**
+**단방향이다.** `web → api → agent`. 역방향 동기 호출은 없다. 에이전트가 결과를 돌려주는 경로는 Firestore 쓰기와 Cloud Tasks 콜백뿐이고, Slack 메시지 발송도 `api`가 한다.
 
-- 송금은 **오직 송금 게이트웨이만** 호출할 수 있습니다. 에이전트는 "지급 목록"까지만 만들고, 실제 실행은 승인 토큰을 쥔 게이트웨이가 담당합니다.
-- 영수증 이미지는 인입 시점에 1회만 Gemini를 태우고, 이후 파이프라인은 Firestore의 구조화 JSON만 읽습니다.
+이유는 검열 지점을 한 곳에 두기 위해서다. 프롬프트 인젝션된 영수증이 Slack DM으로 새어나가는 걸 막는 게 이 규칙이다. 상세는 [`rules/architecture.md`](rules/architecture.md).
 
----
+### 코드가 하는 일 / 에이전트가 하는 일
 
-## 6. 기술 스택
+범위를 좁히는 게 정확도를 올린다.
 
-| 영역 | 선택 | 비고 |
-| --- | --- | --- |
-| 에이전트 오케스트레이션 | **Google ADK** (Agent Development Kit) | |
-| LLM | **Gemini** (멀티모달) | 모델 버전 `TBD` — 기획서 표기는 "Gemini 3.5" |
-| 문서 파싱 | Gemini Multimodal Vision | MVP는 프롬프트 기반 파싱. Document AI는 후순위 |
-| 금융 결제 | **PayPal Payouts API** | 공식 PayPal MCP Server 사용 여부 `TBD` |
-| 데이터베이스 | **Google Cloud Firestore** | 거래 감사 로그 · 정산 이력 |
-| 배포 | **Google Cloud Run** | 컨테이너 백엔드 |
-| 프론트엔드 | 집행자 대시보드 UI | 프레임워크 `TBD` |
-| 메신저 | Slack / Discord 봇 | 우선순위 `TBD` — 데모 시 한쪽만 시연할지 결정 필요 |
-
----
-
-## 7. 데이터 모델
-
-> 🚧 **초안입니다.** 확정 스키마는 DB 담당자가 별도 문서로 관리합니다.
-
-주요 Firestore 컬렉션 (제안):
-
-| 컬렉션 | 역할 | 핵심 필드 (초안) |
-| --- | --- | --- |
-| `claims` | 청구 항목 | 청구자, 금액, 통화, 결제일시, 품목, 계정과목, 상태(`draft`/`confirmed`/`paid`/`rejected`), 원본 영수증 참조 |
-| `receipts` | 영수증 원본 + 파싱 결과 | 이미지 URI, 파싱 JSON, 파싱 신뢰도, 마스킹 적용 여부 |
-| `ledger` | PayPal 결제 원장 스냅샷 | 거래 ID, 금액, 일시, 매칭된 `claim` 참조 |
-| `settlements` | 정산 배치 | 기간, 대상 청구 목록, 이상 탐지 결과, 승인자, 승인 시각 |
-| `payouts` | 송금 실행 결과 | PayPal batch_id, 건별 상태(`SUCCESS`/`FAILED`/`UNCLAIMED`), 재발송 이력 |
-| `audit_logs` | 감사 추적 | 에이전트 판단 근거, 도구 호출 이력, 입출력 스냅샷, 타임스탬프 |
-
-**증빙 아카이빙:** 원본 영수증 이미지는 파싱 JSON과 상호 참조 관계로 저장합니다. 세법상 5년 보관 정책 적용은 Phase 2.
-
----
-
-## 8. 보안 및 가드레일
-
-| 항목 | 내용 |
+| 일 | 담당 |
 | --- | --- |
-| **자율 송금 차단 (Mandatory HITL)** | LLM이 단독으로 송금을 완결할 수 없습니다. 사용자 서명/승인 토큰이 전달되어야만 실행 엔드포인트가 동작합니다. |
-| **송금 한도 캡** | 1회 / 월간 최대 송금 가능 금액을 설정하고, 초과 시 실행을 거부합니다. |
-| **PII 자동 마스킹** | 영수증·인보이스 내 카드번호, CVC, 주민등록번호, 여권번호 등 불필요한 민감 정보를 마스킹 처리합니다. |
-| **감사 로그** | AI가 왜 그 금액을 산출했는지에 대한 판단 근거와 송금 승인 기록을 투명하게 저장합니다. |
+| 영수증 이미지 → JSON | `api`의 Gemini 단발 호출 (ADK 아님) |
+| 원장 ↔ 영수증 매칭 | 결정론적 코드 (금액 · 날짜 윈도우 · 가맹점명) |
+| 금액 합산, 인당 분배 | 코드 |
+| 매칭 실패 건 판단 | 에이전트 |
+| 이상 징후 설명 서술 | 에이전트 |
+| 재요청 문안 작성 | 에이전트 |
 
----
+매칭을 LLM에 넘기지 않는 이유는 데모에서 흔들리면 전체 시연이 무너지는 유일한 지점이기 때문이다.
 
-## 9. MVP 범위
+## 정산 플로우
 
-### ✅ Must-Have (1차 구현)
+```mermaid
+sequenceDiagram
+    participant C as 청구자
+    participant API as api
+    participant AG as agent
+    participant E as 집행자(web)
+    participant PP as PayPal
 
-- [ ] Slack 영수증 이미지 → Gemini 멀티모달 파싱 → 청구 항목 생성
-- [ ] PayPal 결제 원장 ↔ 청구 항목 **양방향 대조**
-- [ ] 미청구 건 자동 감지 → DM 발송 → 응답 대기 → 무응답 시 1회 재촉 → 버튼 응답 처리
-- [ ] 이상 탐지: 유사 중복 청구 감지 + 영수증·청구 금액 불일치 감지
-- [ ] 승인 게이트: 승인 토큰 없이는 송금 엔드포인트 호출 불가
-- [ ] PayPal **Sandbox** Payouts 일괄 송금
-- [ ] 지급 결과 대조 → `FAILED`/`UNCLAIMED` 감지 → 취소 후 올바른 주소로 재발송 제안
-- [ ] 세무사 전달용 **XLSX** 출력
-- [ ] 감사 로그: 에이전트 판단 근거 및 도구 호출 이력 저장
+    C->>API: Slack에 영수증 이미지
+    API->>API: 서명검증 → raw 저장 → enqueue → 200 (0.5s)
+    API->>API: Gemini 파싱 → PII 마스킹 → 구조화 JSON
 
-### ❌ Won't-Have (MVP 제외)
+    E->>API: 정산 기간 선택 → 실행
+    API->>PP: 결제 원장 조회
+    API->>API: 결정론적 매칭
+    API->>AG: 매칭 실패 건 · 이상 징후 판단 요청
+    AG-->>API: draft 정산안 + 판단 근거
 
-Google Drive 자동 수집 · 청구자용 별도 웹페이지 · 계약서 단가 대조 · 사업자등록번호 추출 · 부가세 공제 판단 · 타임시트 분석 · Notion 연동 · 5년 아카이빙 정책 · SaaS 구독 미사용 탐지 · 청구 누락 방지(기술적 난이도로 보류)
+    rect rgb(255,245,230)
+    note over API,C: 추적 루프 — Cloud Tasks schedule_time
+    API->>C: DM "8/14 AWS ₩145,000 청구가 안 됐어요"
+    API->>C: 무응답 시 1회 재촉
+    C->>API: 버튼 응답 / 영수증 회신
+    end
 
----
+    API->>E: 요약 카드 (정산 명세 + 위험 알림)
+    E->>API: 최종 승인 (토큰 발급)
+    API->>API: draft → approved (Firestore CAS)
+    API->>PP: Payouts 일괄 송금 (sender_batch_id = run_id)
+    PP-->>API: 건별 결과
+    API->>E: FAILED/UNCLAIMED 건 취소 후 재발송 제안
+```
 
-## 10. 데모 시나리오
+**대기는 에이전트 세션을 재우지 않는다.** Firestore 상태 머신이다 — `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED`. 예약된 태스크가 깨어나 현재 상태를 읽고 분기하므로 중복 실행돼도 안전하다.
 
-### 데이터셋
+### 재요청 루프
 
-| # | 데이터 | 시연 목적 |
-| --- | --- | --- |
-| 1 | 정상 프리랜서 인보이스 2건 | 기본 정산 플로우 |
-| 2 | 고의 중복 인보이스 1건 | 이상 탐지 |
-| 3 | 영수증 이미지와 청구 금액이 어긋나는 건 1건 | 에이전트 판단 |
-| 4 | PayPal 결제는 있으나 영수증 미제출 건 1건 | 추적 루프 (DM → 재촉 → 응답) |
-| 5 | 미등록 이메일 수취인 1명 | `UNCLAIMED` → 취소 → 재발송 |
+| 상황 | 동작 |
+| --- | --- |
+| 파싱 실패 | 청구자에게 재업로드 요청 |
+| 청구 내용이 영수증과 어긋남 | 청구자에게 정정 요청 |
+| 결제 기록은 있는데 청구가 없음 | DM → 무응답 시 1회 재촉 |
+| 기간 내 끝내 미제출 | 정산 대상에서 제외, 오프라인 처리 |
 
-**계정:** PayPal Sandbox 비즈니스 발신 계정 1개 + 수신 가상 계정 3개
+## 기술 스택
 
-### 데모 성립 조건
-
-1. **시계 주입 설계** — 며칠간의 응답 대기를 40초로 압축 재생하되, **동일 코드가 실제 시계로 GCP에서 실행된 로그**를 병행 제시합니다.
-2. **승인 게이트 시연** — 승인 토큰 없이 송금 엔드포인트를 호출했을 때 거부되는 장면을 5초 확보합니다.
-
----
-
-## 11. 팀 역할분담
-
-3인 팀, 6개 작업 단위. 담당자 배정은 `TBD`.
-
-| # | 영역 | 작업 | 담당 |
+| 레포 | 런타임 | 배포 | 시크릿 |
 | --- | --- | --- | --- |
-| 1 | Agent | 청구 생성 (영수증 파싱 → 청구 항목) | `TBD` |
-| 2 | Agent | 지급할 목록 생성 (대조 · 이상 탐지) | `TBD` |
-| 3 | Agent | 안정성 보장 (가드레일 · 재요청 루프 · 감사 로그) | `TBD` |
-| 4 | FE | 집행자 웹 대시보드 UI | `TBD` |
-| 5 | BE | 웹 API · 메신저 Webhook · Cloud Run 배포 | `TBD` |
-| 6 | DB | Firestore 스키마 설계 | `TBD` |
+| `payflow-frontend` | Next.js / TS | Cloud Run | 없음 |
+| `payflow-backend` | FastAPI / Python | Cloud Run | PayPal, Slack |
+| `payflow-agent` | ADK / Python | Cloud Run | 없음 (Vertex는 ADC) |
+| `docs` | — | — | — |
 
----
+**Gemini 3.5+** (해커톤 필수 요건, 모델 ID는 환경변수) · Vertex AI 경유 · Firestore · GCS · Cloud Tasks · Secret Manager
 
-## 12. 로드맵 (Phase 2)
+스키마 단일 소스는 `api`의 Pydantic 모델이다. `web`은 OpenAPI로 TS 타입을 생성하고, `agent`는 Python 패키지를 태그로 핀해 가져온다. 상세는 [`rules/schema-contract.md`](rules/schema-contract.md).
+
+## 안전장치
 
 | 항목 | 내용 |
 | --- | --- |
-| **문서 자동 수집** | Google Drive 지정 폴더 / 이메일에서 계약서 · 타임시트 · 인보이스 PDF 자동 수집 |
-| **청구자용 웹페이지** | 메신저 봇 외에 별도 청구자 포털 + PayPal 연동 페이지 |
-| **세무 고도화** | 사업자등록번호 추출, 부가세 매입세액 공제 판단, 영수증 누락 경보 |
-| **계약 검증** | 계약서상 명시된 단가 · 상한선 초과 여부 자동 감지 |
-| **타임시트 분석** | 엑셀 타임시트를 메신저로 전송하면 에이전트가 도구로 분석 |
-| **OCR 고도화** | Donut (Document Understanding Transformer, NAVER Clova) 등 전용 모델 도입 |
-| **연동 확장** | Notion 데이터베이스 연동, 세법상 5년 증빙 아카이빙 정책 |
-| **SaaS 관리** | 정기 결제 중복 및 미사용 이상 징후 알림 (예: 30일간 접속 로그 없는 툴 감지) |
+| 승인 게이트 | `draft → approved` 전이는 Firestore 트랜잭션 CAS. 승인 토큰은 `run_id` + 금액 해시에 바인딩, 10분 만료, 승인 후 소각 |
+| 멱등성 | `sender_batch_id = settlement_run_id`. 재시도해도 두 번 나가지 않는다 |
+| 한도 | 배치 총액 · 건별 · 월간 누적 캡. 초과 시 에이전트에게 되묻지 않고 거부 후 사람에게 |
+| 금액 표현 | 정수 minor unit + 통화. `float` 금지 |
+| PII 마스킹 | Firestore 쓰기 **전에** 마스킹. 원본은 GCS에만 |
+| 인젝션 방어 | 영수증 텍스트는 `<untrusted_receipt_text>` 블록으로 격리. 부수효과 툴은 `before_tool_callback` 통과 |
+| 감사 로그 | `{ts, actor, action, run_id, before, after, reason}`. `reason`은 LLM 원문 그대로 |
 
----
+**취소 가능 범위:** PayPal Payouts는 `UNCLAIMED` 상태에서만 취소된다. 수취인이 이미 수령한 건은 API로 회수할 수 없다. 상세는 [`rules/money-safety.md`](rules/money-safety.md).
 
-## 13. 열린 질문 / TODO
+## MVP 범위
 
-- [ ] **지급 취소·환수 범위** — PayPal Payouts에서 `UNCLAIMED` 건 취소는 가능하지만, **이미 수령 완료된 건의 환수("줬다 뺏기")가 가능한지** 확인 필요. 불가능하다면 승인 전 검증을 그만큼 더 강하게 설계해야 함.
-- [ ] **Gemini 모델 버전 확정** — 기획서에는 "Gemini 3.5"로 표기되어 있으나 실제 사용할 모델 ID 확정 필요.
-- [ ] **Slack vs Discord 우선순위** — MVP에서 양쪽을 모두 지원할지, 한쪽만 구현하고 데모할지 결정.
-- [ ] **PayPal MCP Server 채택 여부** — 공식 MCP Server를 쓸지, Payouts API를 직접 호출할지.
-- [ ] **레포 구조** — 현재 문서 전용 레포(`payflow-docs`)만 존재. 코드 레포를 모노레포로 갈지 FE/BE 분리할지 결정.
-- [ ] **프론트엔드 프레임워크 선정**
-- [ ] **통화 처리** — 원화 청구와 PayPal 송금 통화가 다를 때 환율 기준 시점을 어떻게 잡을지.
-- [ ] **"업무용 / 개인용" 분류 오판 시 책임 경계** — 에이전트가 개인 지출을 업무용으로 분류했을 때 어느 단계에서 걸러낼지.
+**Must-Have** — 검증은 기능 순서가 아니라 리스크 순서로 뚫는다 ([`rules/workflow.md`](rules/workflow.md)).
+
+- [ ] PayPal 샌드박스 payout 성공 + 동일 `sender_batch_id` 재시도 무해
+- [ ] 승인 토큰 없이 `/payouts` 호출 → 403 (데모 5초 장면)
+- [ ] Slack 서명검증 → enqueue → 3초 내 ack
+- [ ] 영수증 이미지 → 구조화 JSON → Firestore
+- [ ] 결정론적 매칭 + 에이전트 이상탐지 → draft
+- [ ] 재촉 루프 E2E (`REMINDER_DELAY_SECONDS=20`)
+- [ ] Cloud Run 배포 + IAM 분리 콘솔 확인
+- [ ] 세무사 전달용 XLSX 출력
+
+**Won't-Have** — Google Drive 자동 수집, 청구자용 별도 웹페이지, 계약서 단가 대조, 사업자등록번호 추출, 부가세 공제 판단, 타임시트 분석, Notion 연동, 5년 아카이빙, SaaS 미사용 탐지, 멀티 에이전트
+
+## 데모
+
+| 데이터 | 시연 목적 |
+| --- | --- |
+| 정상 프리랜서 인보이스 2건 | 기본 정산 플로우 |
+| 고의 중복 인보이스 1건 | 이상 탐지 |
+| 영수증과 청구 금액이 어긋나는 건 1건 | 에이전트 판단 |
+| PayPal 결제는 있으나 영수증 미제출 1건 | 추적 루프 |
+| 미등록 이메일 수취인 1명 | `UNCLAIMED` → 취소 → 재발송 |
+| 프롬프트 인젝션이 적힌 영수증 1건 | 가드레일 |
+
+**시간 압축은 가짜 시계를 만들지 않는다.** `REMINDER_DELAY_SECONDS` 환경변수 하나로 데모(20초)와 실제(86400초)를 전환하고, 동일 코드가 실제 값으로 GCP에서 돈 로그를 병행 제시한다.
+
+## 레포 · 문서
+
+`docs`는 각 코드 레포에 submodule로 붙는다. 각 레포 루트 `CLAUDE.md`는 얇게 두고 여기 `rules/`를 참조한다.
+
+- [`CLAUDE.md`](CLAUDE.md) — 공통 규칙, 절대 규칙 3개
+- [`rules/architecture.md`](rules/architecture.md) — 서비스 책임, 호출 방향, 신뢰 경계
+- [`rules/money-safety.md`](rules/money-safety.md) — 멱등성, 승인 게이트, 금액 표현
+- [`rules/schema-contract.md`](rules/schema-contract.md) — 폴리레포 스키마 동기화
+- [`rules/agent-tools.md`](rules/agent-tools.md) — ADK 툴 작성 규칙
+- [`rules/workflow.md`](rules/workflow.md) — 커밋, 크로스레포 변경 순서
+- [`about_hackathon.md`](about_hackathon.md) — 해커톤 규정 · 심사 기준
+- [`journal/`](journal/) · [`SUMMARY.md`](SUMMARY.md) — 작업 기록
+
+## 미결
+
+| 항목 | 내용 |
+| --- | --- |
+| 카테고리 선택 | Taskmaster / Collaborative Partner / Fortified Enterprise Fleet 중 하나. Taskmaster가 유력 |
+| 제출용 영문 README | Spin-up instructions + Architecture Diagram 필수. 어느 레포에 둘지 미정 |
+| PayPal MCP Server | 공식 MCP Server를 쓸지 Payouts API 직접 호출할지 |
+| 통화 처리 | 원화 청구와 PayPal 송금 통화가 다를 때 환율 기준 시점 |
+| 업무용/개인용 오판 | 에이전트가 개인 지출을 업무용으로 분류했을 때 걸러내는 단계 |
