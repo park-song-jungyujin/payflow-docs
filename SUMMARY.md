@@ -16,3 +16,4 @@
 | 2026-08-17 | 데모 fixture 8종 작성 (`backend/tests/fixtures/`) — 스텁 엔드포인트와 최종 데모가 공유할 골든 패스·오류·403·PayPal 혼재 시나리오 |
 | 2026-08-17 | `guards`·`payouts` 스텁 라우트 + 승인 토큰 403 게이트 구현 (`feat/guards-payouts-stub` 브랜치) — DRAFT→APPROVED→EXECUTING CAS, 한도 캡 3종, 감사 로그, TestClient로 8개 경로 검증 |
 | 2026-08-17 | `sender_item_id` 길이 초과(70자 > 상한 63자) 해소 — `settlement_run_id`를 축약형(`run_{yymmdd}_{ULID 앞 12자}`)으로 확정, `rules/schema-contract.md`·`plan.md`·`README.md`·fixture 5개 일괄 반영 |
+| 2026-08-17 | `/tasks/execute-payout`에 PayPal Payouts 실제 호출 + 멱등성 구현 (`feat/paypal-payout-call` 브랜치) — 결정론적 `sender_batch_id`/`sender_item_id`, minor→PayPal 문자열 변환, `/payouts`는 Cloud Tasks 미구성 시 명시적 실패로 전환 |
