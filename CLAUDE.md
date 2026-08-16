@@ -7,9 +7,9 @@
 
 | 레포 | 런타임 | 배포 | 시크릿 |
 |---|---|---|---|
-| `web` | Next.js / TS | Cloud Run | 없음 |
-| `api` | FastAPI / Python | Cloud Run | PayPal, Slack |
-| `agent` | ADK / Python | Cloud Run | 없음 (Vertex는 ADC) |
+| `payflow-frontend` | Next.js / TS | Cloud Run | 없음 |
+| `payflow-backend` | FastAPI / Python | Cloud Run | PayPal, Slack |
+| `payflow-agent` | ADK / Python | Cloud Run | 없음 (Vertex는 ADC) |
 | `docs` | — | — | — |
 
 이 레포는 각 레포에 submodule로 붙는다. 각 레포 루트 `CLAUDE.md`는 얇게 두고
@@ -32,7 +32,7 @@ Demo & Production Readiness 30%. → 기능을 늘리기보다 **"Agent가 실�
 
 나머지를 다 잊어도 이건 지킨다.
 
-1. **`agent`는 PayPal 자격증명에 접근하지 않는다.** 코드가 아니라 IAM으로 막혀 있다.
+1. **`payflow-agent`는 PayPal 자격증명에 접근하지 않는다.** 코드가 아니라 IAM으로 막혀 있다.
    에이전트가 하는 일은 "정산안 문서를 쓰는 것"이지 "돈을 보내는 것"이 아니다.
 2. **승인 토큰 없이 송금 엔드포인트는 실행되지 않는다.** 토큰은 LLM 컨텍스트에
    절대 들어가지 않는다.
