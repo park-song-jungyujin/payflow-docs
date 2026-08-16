@@ -58,7 +58,7 @@ draft → approved → executing → settled | failed
 모든 툴 호출과 상태 전이를 `audit_logs`에 남긴다. 최소 필드:
 
 ```
-{ts, actor: "agent"|"user"|"system", action, run_id, before, after, reason}
+{ts, actor, actor_type: "HUMAN"|"AGENT"|"SYSTEM", action, run_id, before, after, reason}
 ```
 
 `reason`에는 LLM이 쓴 판단 근거 원문을 그대로 넣는다. 요약하지 않는다.

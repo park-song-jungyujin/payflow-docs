@@ -44,11 +44,12 @@ LLM을 게이트로 쓰면 인젝션된 영수증이 승인을 통과시킬 수 
 
 ```python
 class SettlementFilter(BaseModel):   # 에이전트가 만들 수 있는 것
-    period_start: date
-    period_end: date
-    claimant_ids: list[str] | None
-    categories: list[str] | None
-    exclude_claim_ids: list[str] | None
+    model_config = ConfigDict(extra="forbid")
+    period_start: date | None = None
+    period_end: date | None = None
+    recipient_ids: list[str] | None = None
+    account_categories: list[AccountCategory] | None = None
+    exclude_claim_ids: list[str] | None = None
 ```
 
 **자연어로 바꿀 수 없는 것:** 한도 캡, 승인 토큰, 송금 실행 여부, 수취인 주소, 금액.
