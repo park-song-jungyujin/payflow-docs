@@ -20,3 +20,4 @@
 | 2026-08-17 | `/tasks/reconcile`·`/webhooks/paypal` 지급 결과 대조 구현 (`feat/paypal-reconcile-webhook` 브랜치) — SUCCESS/FAILED 종결 판정, claim·monthly_paid_minor 롤백, max attempts 강제 종결. `/payouts`에 빠져 있던 monthly_paid_minor 예약 가산도 같이 메꿈 |
 | 2026-08-17 | C 트랙(guards·payouts) Firestore 연동 — 인메모리 fixture를 실 Firestore로 교체, CAS 트랜잭션 2곳, `scripts/seed_firestore.py` 추가, execute-payout 이름 충돌 버그 수정 |
 | 2026-08-17 | Firestore DB를 `(default)` 단일에서 `dev`/`deploy` 2개로 분리 — 부트스트랩 스크립트에 생성·재시딩 명령 추가, 코드·문서 기본값 갱신 |
+| 2026-08-17 | (hotfix) `dev`→`development` 개명(Firestore ID 4자 제약) 후 `development`·`deploy` DB 실제 생성, fixture 재시딩. 부트스트랩 스크립트 `PYTHONPATH` 누락 버그 수정 |
