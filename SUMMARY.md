@@ -11,3 +11,4 @@
 | 2026-08-16 | PayPal 샌드박스 payout 멱등성 확인 — 동일 `sender_batch_id` 재전송은 400 에러로 거부되어 중복 송금 없음을 검증 |
 | 2026-08-16 | Track A 스키마 초안을 확정본에 병합하고 폐기 — 문서 단일화. PayPal ID 길이 정정(`sender_item_id` 상한 63자, 확정본 형식은 70자로 초과) 및 Track A 델타 3건 제안 |
 | 2026-08-16 | D1 착수 블로커 5개 해소 — 트랙 배정(A 정유진 · B 박수현 · C 송재훈), GCP 결제 연결, PayPal Sandbox·Slack 계정 발급 완료. `plan.md`·`README.md` 미결 표를 남은 항목만으로 정리 |
+| 2026-08-16 | S0 통과 확인 — `payflow-backend`에 `src/schemas/` Pydantic 모델과 `v0.1.0` 태그. `sender_item_id` 길이 제약은 미구현이라 형식 변경 비용이 아직 0 |

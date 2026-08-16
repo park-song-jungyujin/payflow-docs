@@ -54,7 +54,7 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 
 | 레포 | 상태 |
 |---|---|
-| `payflow-backend` | 🟡 `backend/`에 FastAPI 스텁(`src/main.py`, `Dockerfile`, Python 3.12 핀). `payflow-api`로 Cloud Run 배포됨. 멱등성 검증 스크립트 1개 |
+| `payflow-backend` | 🟡 FastAPI 스텁(`src/main.py`, `Dockerfile`, Python 3.12 핀) + **`src/schemas/` Pydantic 모델 `v0.1.0` 태그**. `payflow-api`로 Cloud Run 배포됨 |
 | `payflow-frontend` | ⬜ 빈 상태 |
 | `payflow-agent` | ⬜ 빈 상태 |
 
@@ -66,14 +66,15 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 |---|---|---|
 | 1 | **`sender_item_id` 길이 초과 결정** — 70자 > 상한 63자. 축약형 채택 여부 | 전원 |
 | 2 | Track A 델타 3건 확정본 반영 여부 | 전원 |
-| 3 | **디렉터리 경로 불일치** — 계약은 `api/src/...`, 실제 레포는 `backend/src/...` | 전원 |
-| 4 | api v0.1.0 태그 → OpenAPI 생성 → fixture 반환 스텁 | C |
+| 3 | OpenAPI 생성 → fixture 반환 스텁 배포 (A·B 언블록) | C |
+| 4 | B가 `openapi-typescript`, A가 스키마 import로 S0 완료 판정 | A·B |
 
 1번은 D2 이전에 정해야 한다. `sender_item_id`는 멱등성 키라 송금이 한 번 나간 뒤에는
-형식을 못 바꾼다.
+형식을 못 바꾼다. 현재 `src/schemas/models.py`의 `sender_item_id`에는 길이 제약이 없어
+형식 결정이 그대로 열려 있다.
 
-3번은 지금 정하면 5분, 세 트랙이 각자 디렉터리를 만든 뒤에 정하면 이동 + import 경로
-수정이다. 문서를 `backend/`로 맞추든 레포를 `api/`로 맞추든 한쪽으로 통일한다.
+문서가 `api/src/...`로 쓰는 경로는 `payflow-backend` 레포 루트의 `src/...`다.
+`api`는 디렉터리가 아니라 서비스 이름이다.
 
 **Phase 0 착수 블로커는 전부 해소됐다.** 담당자 배정, GCP 결제 연결, 계정 3종,
 `gcloud`·Terraform 설치, 스키마 계약 10항목, OIDC 관통까지 끝났다.
@@ -404,7 +405,7 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 
 | | 시점 | 조건 | 못 지키면 |
 |---|---|---|---|
-| **S0** | D1 종료 | 스키마 v0.1.0 태그 | 전원 대기. 최우선 |
+| **S0** | D1 종료 | 스키마 v0.1.0 태그 | ✅ **통과** — `payflow-backend` `v0.1.0` |
 | **S1** | D2 종료 | 스텁 배포 + payout 성공 + 403 | A·B 블로킹 |
 | **S2** | D9 종료 | 각 트랙 단독 동작 | 통합 3일로 부족 |
 | **S3** | D12 종료 | E2E 성공 + Cloud Run 배포 | 영상 못 찍음 |
