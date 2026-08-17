@@ -28,3 +28,4 @@
 | 2026-08-17 | PayPal/Slack 시크릿 4개를 Cloud Run `payflow-api` env로 실제 주입 — `secret_key_ref` Terraform 추가, 시크릿 실값 최초 등록, Cloud Run 서비스 에이전트 IAM 바인딩 누락 발견해 추가 |
 | 2026-08-17 | SLACK_BOT_TOKEN 재발급 반영, execute-payout 실검증 중 PayPal이 KRW 통화를 지원 안 함을 발견 |
 | 2026-08-17 | PayPal 지원 통화 검증 + 승인 시점 FX 환산(schema-contract.md §4) 구현, 캡 검사 미환산 버그도 수정 (PR #6) |
+| 2026-08-17 | `plan.md` Track C 체크박스를 실제 상태로 정리 — api·인프라 12개 완료 처리, S1 동기화 지점 통과 표시. 미착수(`before_tool_callback`, 안전 확인 에이전트)는 agent 레포 담당으로 남겨둠 |

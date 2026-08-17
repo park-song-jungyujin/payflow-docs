@@ -371,25 +371,25 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 돈이 나가는 경로 전부와 인프라. **브랜치 게이트 대상이 가장 많다.**
 
 **api**
-- [ ] 승인 토큰 발급/검증 — `run_id` + 금액 해시 바인딩, 10분 만료, 사용 후 소각
-- [ ] `/payouts` 게이트 — 토큰 없으면 403
-- [ ] 한도 캡 — 배치 총액 · 건별 · 월간 누적. 환경변수
-- [ ] `draft → approved` CAS 전이 (Firestore 트랜잭션)
-- [ ] `sender_batch_id = settlement_run_id` 멱등성
-- [ ] PayPal Payouts 호출 — 승인 응답에서 동기 호출 금지, `executing` 마킹 후 Cloud Tasks
-- [ ] 지급 결과 대조 → `FAILED`/`UNCLAIMED` 취소 후 재발송 제안
-- [ ] 감사 로그 `{ts, actor, action, run_id, before, after, reason}`
-- [ ] `before_tool_callback` — 한도 검사 · 중복 실행 검사 · 감사 로그
+- [x] 승인 토큰 발급/검증 — `run_id` + 금액 해시 바인딩, 10분 만료, 사용 후 소각
+- [x] `/payouts` 게이트 — 토큰 없으면 403
+- [x] 한도 캡 — 배치 총액 · 건별 · 월간 누적. 환경변수
+- [x] `draft → approved` CAS 전이 (Firestore 트랜잭션)
+- [x] `sender_batch_id = settlement_run_id` 멱등성
+- [x] PayPal Payouts 호출 — 승인 응답에서 동기 호출 금지, `executing` 마킹 후 Cloud Tasks
+- [x] 지급 결과 대조 → `FAILED`/`UNCLAIMED` 취소 후 재발송 제안
+- [x] 감사 로그 `{ts, actor, action, run_id, before, after, reason}`
+- [ ] `before_tool_callback` — 한도 검사 · 중복 실행 검사 · 감사 로그 (agent 레포, 미착수)
 
 **안전 확인 에이전트**
-- [ ] 승인 직전 리스크 리포트 작성 (조언, 게이트 아님)
-- [ ] 판단 근거를 `audit_logs.reason`에 원문 그대로
+- [ ] 승인 직전 리스크 리포트 작성 (조언, 게이트 아님) (agent 레포, 미착수)
+- [ ] 판단 근거를 `audit_logs.reason`에 원문 그대로 (agent 레포, 미착수)
 
 **인프라**
-- [ ] Terraform — Cloud Run 3, Firestore, Cloud Tasks, Secret Manager, IAM
-- [ ] **`agent` 서비스 계정에 PayPal 시크릿 접근 권한 없음을 코드로 증명.** 주석 필수
-- [ ] 스텁 엔드포인트 (D2, 나머지 둘 언블록)
-- [ ] PayPal은 **Payouts API 직접 호출.** MCP Server를 끼면 멱등성·게이트·캡의 통제점이 흐려진다
+- [x] Terraform — Cloud Run 3, Firestore, Cloud Tasks, Secret Manager, IAM
+- [x] **`agent` 서비스 계정에 PayPal 시크릿 접근 권한 없음을 코드로 증명.** 주석 필수
+- [x] 스텁 엔드포인트 (D2, 나머지 둘 언블록)
+- [x] PayPal은 **Payouts API 직접 호출.** MCP Server를 끼면 멱등성·게이트·캡의 통제점이 흐려진다
 
 **Cloud Run 설정** — 기본값으로 두면 물린다
 
@@ -407,7 +407,7 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 | | 시점 | 조건 | 못 지키면 |
 |---|---|---|---|
 | **S0** | D1 종료 | 스키마 v0.1.0 태그 | ✅ **통과** — `payflow-backend` `v0.1.0` |
-| **S1** | D2 종료 | 스텁 배포 + payout 성공 + 403 | A·B 블로킹 |
+| **S1** | D2 종료 | 스텁 배포 + payout 성공 + 403 | ✅ **통과** — `/payouts` 골든 패스(USD) 실행·403 게이트 라이브 검증 완료 |
 | **S2** | D9 종료 | 각 트랙 단독 동작 | 통합 3일로 부족 |
 | **S3** | D12 종료 | E2E 성공 + Cloud Run 배포 | 영상 못 찍음 |
 | **S4** | D14 종료 | 제출물 전량 | 마감 위험 |
