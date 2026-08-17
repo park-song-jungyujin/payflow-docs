@@ -12,7 +12,7 @@
 
 ## 진행 현황
 
-<!-- 갱신: 2026-08-16 -->
+<!-- 갱신: 2026-08-17 -->
 
 | Phase | 상태 |
 |---|---|
@@ -54,9 +54,9 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 
 | 레포 | 상태 |
 |---|---|
-| `payflow-backend` | 🟡 FastAPI 스텁(`src/main.py`, `Dockerfile`, Python 3.12 핀) + **`src/schemas/` Pydantic 모델 `v0.1.0` 태그**. `payflow-api`로 Cloud Run 배포됨 |
+| `payflow-backend` | 🟢 `guards/`·`payouts/` 전 경로 구현·배포 완료(승인 토큰·403 게이트·CAS·멱등성·PayPal 실호출·FX 환산·대조·감사 로그). `ingest/parsing/matching/settlements`는 `__init__.py`만 있는 빈 스캐폴딩(A·B 몫) |
 | `payflow-frontend` | ⬜ 빈 상태 |
-| `payflow-agent` | ⬜ 빈 상태 |
+| `payflow-agent` | 🟡 `safety/`(LlmAgent + `submit_risk_report`)·`shared/` 구현 완료, 로컬 인증 게이트까지 검증. `claimant/`·`executor/`는 501 스텁. Dockerfile/CI 없어 미배포 |
 
 별도 스캐폴딩 단계를 두지 않기로 했다. 각 트랙이 D1~D2에 자기 레포를 직접 세운다.
 
@@ -65,8 +65,8 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 | # | 항목 | 누가 |
 |---|---|---|
 | 1 | Track A 델타 3건 확정본 반영 여부 | 전원 |
-| 2 | OpenAPI 생성 → fixture 반환 스텁 배포 (A·B 언블록) | C |
-| 3 | B가 `openapi-typescript`, A가 스키마 import로 S0 완료 판정 | A·B |
+| 2 | ✅ OpenAPI 생성 → fixture 반환 스텁 배포 (A·B 언블록) — 스텁을 넘어 `guards`·`payouts` 실제 구현까지 배포 완료 | C |
+| 3 | B가 `openapi-typescript`, A가 스키마 import로 S0 완료 판정 (미확인 — A·B 진행분 확인 필요) | A·B |
 
 **`sender_item_id` 길이 초과는 8/17에 해소됐다.** `settlement_run_id`를 축약형
 (`run_{yymmdd}_{ULID 앞 12자}`, 23자)으로만 쓰기로 정해 `sender_item_id`가 54자(재발송
@@ -379,11 +379,11 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 - [x] PayPal Payouts 호출 — 승인 응답에서 동기 호출 금지, `executing` 마킹 후 Cloud Tasks
 - [x] 지급 결과 대조 → `FAILED`/`UNCLAIMED` 취소 후 재발송 제안
 - [x] 감사 로그 `{ts, actor, action, run_id, before, after, reason}`
-- [x] `before_tool_callback` — 한도 검사 · 중복 실행 검사 · 감사 로그 (PR 중: agent#1, backend#7)
+- [x] `before_tool_callback` — 한도 검사 · 중복 실행 검사 · 감사 로그 (agent#1, backend#7 머지 완료)
 
 **안전 확인 에이전트**
-- [x] 승인 직전 리스크 리포트 작성 (조언, 게이트 아님) (PR 중: agent#1, backend#7)
-- [x] 판단 근거를 `audit_logs.reason`에 원문 그대로 (PR 중: agent#1, backend#7)
+- [x] 승인 직전 리스크 리포트 작성 (조언, 게이트 아님) (agent#1, backend#7 머지 완료)
+- [x] 판단 근거를 `audit_logs.reason`에 원문 그대로 (agent#1, backend#7 머지 완료)
 
 **인프라**
 - [x] Terraform — Cloud Run 3, Firestore, Cloud Tasks, Secret Manager, IAM
