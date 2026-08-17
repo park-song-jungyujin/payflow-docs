@@ -196,6 +196,7 @@ sequenceDiagram
 - [`rules/agent-tools.md`](rules/agent-tools.md) — ADK 툴 작성 규칙
 - [`rules/workflow.md`](rules/workflow.md) — 커밋, 크로스레포 변경 순서
 - [`about_hackathon.md`](about_hackathon.md) — 해커톤 규정 · 심사 기준
+- [`infra/iam-403-demo.md`](infra/iam-403-demo.md) — IAM 격리 403 데모 절차
 - [`journal/`](journal/) · [`SUMMARY.md`](SUMMARY.md) — 작업 기록
 
 ## 미결
