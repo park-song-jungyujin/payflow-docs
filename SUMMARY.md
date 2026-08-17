@@ -29,3 +29,4 @@
 | 2026-08-17 | SLACK_BOT_TOKEN 재발급 반영, execute-payout 실검증 중 PayPal이 KRW 통화를 지원 안 함을 발견 |
 | 2026-08-17 | PayPal 지원 통화 검증 + 승인 시점 FX 환산(schema-contract.md §4) 구현, 캡 검사 미환산 버그도 수정 (PR #6) |
 | 2026-08-17 | `plan.md` Track C 체크박스를 실제 상태로 정리 — api·인프라 12개 완료 처리, S1 동기화 지점 통과 표시. 미착수(`before_tool_callback`, 안전 확인 에이전트)는 agent 레포 담당으로 남겨둠 |
+| 2026-08-17 | 안전 확인 에이전트 + before_tool_callback 신규 구현 — `agent` 레포 서비스 스캐폴드 최초 작성, backend에 agent_drafts 쓰기 엔드포인트 추가. 두 레포 PR로 올림(agent#1, backend#7) |

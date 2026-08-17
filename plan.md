@@ -379,11 +379,11 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 - [x] PayPal Payouts 호출 — 승인 응답에서 동기 호출 금지, `executing` 마킹 후 Cloud Tasks
 - [x] 지급 결과 대조 → `FAILED`/`UNCLAIMED` 취소 후 재발송 제안
 - [x] 감사 로그 `{ts, actor, action, run_id, before, after, reason}`
-- [ ] `before_tool_callback` — 한도 검사 · 중복 실행 검사 · 감사 로그 (agent 레포, 미착수)
+- [x] `before_tool_callback` — 한도 검사 · 중복 실행 검사 · 감사 로그 (PR 중: agent#1, backend#7)
 
 **안전 확인 에이전트**
-- [ ] 승인 직전 리스크 리포트 작성 (조언, 게이트 아님) (agent 레포, 미착수)
-- [ ] 판단 근거를 `audit_logs.reason`에 원문 그대로 (agent 레포, 미착수)
+- [x] 승인 직전 리스크 리포트 작성 (조언, 게이트 아님) (PR 중: agent#1, backend#7)
+- [x] 판단 근거를 `audit_logs.reason`에 원문 그대로 (PR 중: agent#1, backend#7)
 
 **인프라**
 - [x] Terraform — Cloud Run 3, Firestore, Cloud Tasks, Secret Manager, IAM
