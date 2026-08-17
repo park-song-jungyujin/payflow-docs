@@ -85,7 +85,7 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 ## 2. Firestore 컬렉션
 
-컬렉션은 9개다.
+컬렉션은 8개다.
 
 ### `recipients`
 
