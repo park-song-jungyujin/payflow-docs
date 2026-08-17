@@ -31,4 +31,5 @@
 | 2026-08-17 | `plan.md` Track C 체크박스를 실제 상태로 정리 — api·인프라 12개 완료 처리, S1 동기화 지점 통과 표시. 미착수(`before_tool_callback`, 안전 확인 에이전트)는 agent 레포 담당으로 남겨둠 |
 | 2026-08-17 | 안전 확인 에이전트 + before_tool_callback 신규 구현 — `agent` 레포 서비스 스캐폴드 최초 작성, backend에 agent_drafts 쓰기 엔드포인트 추가. 두 레포 PR로 올림(agent#1, backend#7) |
 | 2026-08-17 | agent#1·backend#7 머지 확인, `plan.md` 진행 현황 재점검 — Track C 체크박스·코드 상태 표·다음 액션을 실제 상태로 갱신 |
+| 2026-08-17 | XLSX 출력(세무사용, 계정과목 컬럼 포함) 구현 — `GET /settlements/runs/{run_id}/export`, `openpyxl` 의존성 추가 |
 | 2026-08-18 | 스키마 계약 v0.2.0 — Track A 델타 1·2 반영. `claim_requests.reason`(필수 enum 4값) 추가 및 `receipt_id` nullable 완화, `receipts.slack_channel_id`·`slack_message_ts`(nullable) 추가. 문서 → `backend/src/schemas/` → 태그 순으로 반영, `agent` 핀·`web` 타입 재생성은 대기 |
