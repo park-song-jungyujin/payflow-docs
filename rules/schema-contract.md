@@ -118,6 +118,8 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | `recipient_id` | str | |
 | `image_gcs_uri` | str | 원본 이미지 |
 | `raw_text_gcs_uri` | str | 파싱 원문. 에이전트의 비신뢰 입력이 여기서 온다 |
+| `slack_channel_id` | str \| None | 영수증을 올린 원 메시지의 채널 |
+| `slack_message_ts` | str \| None | 같은 메시지의 ts. 스레드 답글의 `thread_ts`로 넣는다 |
 | `merchant_name` | str \| None | 마스킹 후 값. 결정론적 매칭이 쓴다 |
 | `transaction_date` | date \| None | **결제일.** `created_at`(업로드 시각)과 다르다 |
 | `parsed_amount_minor` | int \| None | |
@@ -131,6 +133,15 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 **PII 마스킹은 Firestore 쓰기 전에 한다.** Firestore에 들어가는 값은 전부 마스킹 후이고,
 원문은 `image_gcs_uri`와 `raw_text_gcs_uri`로만 접근한다.
+
+`slack_channel_id`·`slack_message_ts`는 **업로드된 원 메시지의 좌표**다. "파싱했습니다,
+이게 맞나요?" 카드를 그 메시지 스레드에 답글로 붙이는 데 쓴다. `claim_requests.slack_dm_ts`는
+DM으로 보낸 청구 확인 메시지의 ts라서 이 용도로 쓸 수 없다 — 두 값은 다른 대화를 가리킨다.
+채널 ID 없이는 `chat.postMessage`를 부를 수 없으므로 둘을 함께 저장한다.
+
+**둘 다 nullable이다.** Slack 인입이 아닌 경로(fixture 시딩, 수동 등록)로 만들어진
+영수증에는 값이 없다. 비어 있으면 스레드 답글을 포기하고 DM으로 폴백한다.
+한쪽만 있는 상태는 만들지 않는다 — 같이 쓰거나 같이 비운다.
 
 상태 의미:
 
@@ -146,7 +157,9 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `claim_request_id` | str | `crq_{ulid}` |
-| `recipient_id`, `receipt_id` | str | |
+| `recipient_id` | str | |
+| `receipt_id` | str \| None | 영수증에 매이지 않는 사유가 있다. 아래 |
+| `reason` | enum | **필수.** 왜 보내는지. 아래 |
 | `slack_dm_ts` | str | 버튼 응답을 원 메시지에 붙일 때 쓴다 |
 | `reminded_at` | Timestamp \| None | |
 | `expires_at` | Timestamp | 생성 시각 + `CLAIM_REQUEST_TTL_SECONDS` |
@@ -155,6 +168,29 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 전이: `PENDING → REMINDED → RESPONDED | EXPIRED`.
 `PENDING → RESPONDED`도 가능하다(재촉 전에 응답).
+
+#### `reason`
+
+청구자에게 보내는 DM은 상황마다 문안이 다르다. **무엇을 보낼지 고르는 근거를 코드가
+저장하고 에이전트가 읽는다.** 이 값이 없으면 에이전트가 상황을 추측해야 한다.
+
+| 값 | 언제 | 문안 방향 |
+|---|---|---|
+| `PARSE_FAILED` | 영수증이 흐릿해 파싱 실패 (`receipts.status = FAILED`) | 다시 올려달라 |
+| `AMOUNT_MISMATCH` | 영수증 금액과 청구 금액이 다름 (`receipts.status = NEEDS_REQUERY`) | 확인해달라 |
+| `MISSING_CLAIM` | 결제 기록은 있는데 청구가 없음 | 청구 안 했는지 묻는다 |
+| `UNPAID_NOTICE` | 지급 결과 통지 — "10건 중 8건 지급, 2건 사유" | 재촉이 아니라 통지 |
+
+`reason`은 **분기 근거이지 문안이 아니다.** 문안 자체는 청구자 에이전트가 만든다.
+에이전트는 이 값을 읽기만 하고 쓰지 않는다 — 에이전트가 사유를 지어내는 경로는 없다.
+
+`MISSING_CLAIM`과 `UNPAID_NOTICE`는 특정 영수증에서 출발하지 않는다. 전자는 결제 기록만
+있고 영수증이 아직 없는 상태이고, 후자는 배치 결과 통지다. 그래서 **`receipt_id`가
+nullable**이다. 나머지 두 사유는 반드시 `receipt_id`를 채운다.
+
+`reason`은 필수다. 다만 §12 fixture 02·05의 `claim_requests`에는 이 필드가 없다 —
+fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처진 상태이고, **새로 만드는
+문서에는 반드시 채운다.** 이 간극이 걸리면 fixture를 새로 추가해서 덮는다.
 
 ### `claims`
 
