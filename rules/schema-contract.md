@@ -128,7 +128,9 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | `category_source` | enum | `LLM_PARSE` / `DETERMINISTIC_FALLBACK` / `EXECUTOR_AGENT` / `HUMAN` |
 | `parse_signals` | map | §5 |
 | `llm_confidence` | float \| None | 0.0~1.0 |
-| `status` | enum | `RECEIVED` / `PARSED` / `NEEDS_REQUERY` / `FAILED` |
+| `verified_at` | Timestamp \| None | 검증 통과 시각. 미검증이거나 검증 실패면 `None` |
+| `verification_signals` | map \| None | 아래 "검증" 참조 |
+| `status` | enum | `RECEIVED` / `PARSED` / `NEEDS_REQUERY` / `VERIFICATION_FAILED` / `FAILED` |
 | `created_at`, `updated_at` | Timestamp | |
 
 **PII 마스킹은 Firestore 쓰기 전에 한다.** Firestore에 들어가는 값은 전부 마스킹 후이고,
@@ -150,7 +152,112 @@ DM으로 보낸 청구 확인 메시지의 ts라서 이 용도로 쓸 수 없다
 | `RECEIVED` | Slack 인입 완료, 파싱 전 |
 | `PARSED` | 파싱 성공. 청구 항목 생성 가능 |
 | `NEEDS_REQUERY` | 파싱은 됐으나 청구자 에이전트가 영수증과 불일치 판단. 재요청 대상 |
+| `VERIFICATION_FAILED` | 파싱은 됐으나 이미지-파싱 결과 검증(코드 판정) 실패. 재요청 대상 |
 | `FAILED` | 파싱 자체 실패 |
+
+`NEEDS_REQUERY`와 `VERIFICATION_FAILED`는 판정 주체와 판정 시점이 다르다.
+`NEEDS_REQUERY`는 **청구자 에이전트**가 청구 확정 과정에서 내리는 판단이고,
+`VERIFICATION_FAILED`는 그 이전에 **코드가** 아래 검증 단계에서 내리는 결정론적 판정이다.
+하나로 합치면 "왜 재요청이 갔는지"를 감사 로그로 재구성할 때 판정 주체를 잃는다.
+
+#### 검증 (verification)
+
+영수증 이미지는 파싱 시점에 이미 GCS에 저장돼 있다(`image_gcs_uri`). **정산 실행
+시점**, 정산 후보로 잡힌 claim들이 딸린 receipt마다 이미지와 파싱 결과가 실제로
+일치하는지 Gemini structured output **단발 호출**로 재확인한다. 이미지 1장당 호출
+1회이고 ADK 에이전트가 아니다 — 파싱 호출과 같은 이유로 세션·툴루프가 필요 없다.
+
+**호출 시점은 `POST /settlements/runs` 처리 중, 후보 claim을 확정하는 단계다** —
+새 Cloud Tasks 라우트가 아니라 그 요청 핸들러 안에서 receipt별로 순차/병렬 호출한다.
+이건 `architecture.md` §비동기의 "3초 넘게 걸리는 일은 Cloud Tasks로" 원칙에 대한
+**의도적 예외다** — 이 엔드포인트는 Slack webhook처럼 3초 ack 제약이 걸린 인입
+경로가 아니라, 대시보드에서 사람이 버튼을 눌러 트리거하는 동기 액션이다.
+`api` Cloud Run 타임아웃은 300초(`backend/infra/cloud_run.tf`)로, 데모 규모(후보
+receipt 수십 건 이하, 건당 단발 Gemini 호출)에서 인라인으로 충분히 끝난다. 후보 건수가
+늘어 300초에 근접하면 이 절을 갱신하고 `/tasks/verify-receipt` 같은 fan-out 태스크로
+옮긴다 — 그전까지는 새 라우트를 만들지 않는다.
+
+**청구자 에이전트의 검토와는 다른 게이트다.** 청구자 에이전트는 영수증 **인입
+직후**(§9 에이전트 표) 파싱 결과를 검토해 청구 확정 여부를 판단한다 — 이건 청구
+생성을 막는 게이트다. 이 검증은 그보다 한참 뒤, **정산 후보 편입**을 막는 별도
+게이트다. 청구자 에이전트를 거쳐 이미 `PARSED`인 receipt도, 나중에 이 검증에서
+불일치가 나오면 정산에서 빠진다. 하나가 다른 하나를 대체하지 않는다 — 청구자
+에이전트의 책임 범위는 이 변경으로 줄지 않는다.
+
+검증 결과는 `receipt_id`에 영구히 캐싱된다 — 이미지와 파싱 텍스트의 일치 여부는
+어느 정산 배치에서 봐도 같은 값이므로, 이미 `verified_at`이 있는 receipt는 다음
+배치에서 재검증하지 않는다.
+
+**검증 호출은 판정만 반환하고 숫자를 고치지 않는다.** 절대 규칙 3("금액 계산은 LLM이
+하지 않는다")이 여기도 적용된다. VLM은 `parsed_amount_minor` 등 코드가 이미 들고 있는
+값과 이미지가 맞는지 bool로만 답하고, 대체 금액이나 대체 텍스트를 내놓지 않는다.
+
+```python
+class VerificationSignals(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_legible: bool
+    amount_matches: bool
+    merchant_matches: bool
+    date_matches: bool
+    injection_suspected: bool
+```
+
+판정은 코드가 결정론적으로 내린다. **코드가 들고 있지 않은 필드(`None`)는 비교
+대상이 아니다** — `merchant_name`·`transaction_date`는 nullable이고(§2), 값이 없는
+필드에 대해 VLM이 반환한 `_matches`를 강제로 보면 정상 `PARSED` 영수증이 널 필드
+하나 때문에 검증 탈락한다:
+
+```python
+def verify_passed(r: Receipt, s: VerificationSignals) -> bool:
+    if not s.image_legible or s.injection_suspected:
+        return False
+    if r.parsed_amount_minor is not None and not s.amount_matches:
+        return False
+    if r.merchant_name is not None and not s.merchant_matches:
+        return False
+    if r.transaction_date is not None and not s.date_matches:
+        return False
+    return True
+```
+
+통과하면 `verified_at = now`, `verification_signals`에 신호를 저장하고 `status`는
+`PARSED`를 유지한다. 실패하면 `status = VERIFICATION_FAILED`,
+`claim_requests.reason = VERIFICATION_FAILED`로 재요청을 만들고, 해당 claim은 이번
+정산 후보에서 빠진다.
+
+**`claim_requests` 문서는 B(`POST /settlements/runs`)가 쓰지만, 그 뒤 DM 발송은 A가
+소유한 기존 재촉 루프를 그대로 탄다** — `PENDING` 상태로 써넣기만 하면 A의 알림
+트리거가 `AMOUNT_MISMATCH`와 똑같은 방식으로 집어가 청구자 에이전트를 불러 문안을
+짓는다. 정산 흐름 안에 별도 알림 진입점이나 청구자 에이전트 호출을 새로 만들지 않는다
+— `receipt_id`가 있으니 스레드 답글도 §2 규칙대로 그대로 붙는다.
+
+**검증은 `claims`의 `CONFIRMED → IN_RUN` CAS 전이(§7, `api/src/guards/` 소관) 이전에
+끝나야 한다.** 순서를 뒤집어 먼저 점유부터 시키면, 검증에서 나중에 떨어진 claim이
+어느 run에도 속하지 않으면서 `IN_RUN` + `settlement_run_id`를 들고 있는 상태가
+생긴다 — 이건 `settled` 실패 시 되돌리기(§7)만 정의된 상태라 방치된다. 그래서
+`POST /settlements/runs`는 후보를 **먼저 필터로 조회**하고, **검증해 탈락분을
+제외**한 뒤, **그 살아남은 집합에 대해서만** CAS 트랜잭션을 연다.
+
+**§5 계정과목 라우팅과는 독립된 축이다.** 검증은 `account_category_code`,
+`category_source`를 건드리지 않는다. 파싱 시점의 2단계 게이트(§5)가 이미 끝난 뒤에
+검증이 도니 순서를 다시 따질 필요는 없다 — 검증 통과 여부는 오직 "정산 후보에 넣을지"만
+결정한다(§9).
+
+**마이그레이션.** Firestore는 스키마리스이므로 DDL은 없다. `verified_at`·
+`verification_signals`는 nullable/optional이라 기존 문서는 필드가 없는 채로도 유효하다.
+`verified_at`이 없는 receipt는 "미검증"으로 취급되어 정산 후보 필터(§9)에서 자동
+제외되고, `POST /settlements/runs`가 그 자리에서 검증을 돌려 채운다 — 별도 backfill
+스크립트는 원칙적으로 불필요하다. 다만 데모용 fixture는 수정 금지(§0)라 검증
+필드를 담고 있지 않으므로, C 시연 시나리오(fixture 07·08)가 이미 `settlement_runs`를
+동반한 상태로 시딩되는 문제가 남는다 — `backend/scripts/seed_firestore.py`가 시딩
+시점에 `status = PARSED`이면서 `parse_signals.injection_suspected`가 아닌 receipt에
+통과 판정을 채워 넣어 우회한다. fixture 06(프롬프트 인젝션)은 이 보정에서 제외되어
+계속 미검증 상태로 남는다 — claim·settlement_run이 없는 receipt라 다른 데모에
+영향이 없고, 인젝션 탐지 시연 목적을 훼손하지 않는다.
+
+**인프라 변경 없음.** `api` 서비스 계정은 이미 `roles/aiplatform.user`를 갖고 있다
+(`backend/infra/iam.tf`, 파싱 호출과 동일 권한) — 검증 호출에 추가 IAM이 필요 없다.
+새 Cloud Tasks 라우트가 없으므로 큐 설정도 그대로다. Terraform 변경 없음.
 
 ### `claim_requests`
 
@@ -178,6 +285,7 @@ DM으로 보낸 청구 확인 메시지의 ts라서 이 용도로 쓸 수 없다
 |---|---|---|
 | `PARSE_FAILED` | 영수증이 흐릿해 파싱 실패 (`receipts.status = FAILED`) | 다시 올려달라 |
 | `AMOUNT_MISMATCH` | 영수증 금액과 청구 금액이 다름 (`receipts.status = NEEDS_REQUERY`) | 확인해달라 |
+| `VERIFICATION_FAILED` | 이미지-파싱 결과 검증 실패 (`receipts.status = VERIFICATION_FAILED`) | 이미지와 내용이 안 맞으니 다시 확인해달라 |
 | `MISSING_CLAIM` | 결제 기록은 있는데 청구가 없음 | 청구 안 했는지 묻는다 |
 | `UNPAID_NOTICE` | 지급 결과 통지 — "10건 중 8건 지급, 2건 사유" | 재촉이 아니라 통지 |
 
@@ -561,7 +669,10 @@ def test_openapi_snapshot():
 
 ```
 POST /settlements/runs
-  └ claims CONFIRMED → IN_RUN (CAS 트랜잭션)
+  └ 필터로 후보 claim 조회 (아직 점유 안 함)
+  └ 후보 claim의 receipt마다 검증 (§2 "검증") — 미검증분만, 통과분은 캐시 재사용
+  └ 검증 실패(VERIFICATION_FAILED) claim은 후보에서 제외
+  └ claims CONFIRMED → IN_RUN (CAS 트랜잭션, 살아남은 후보만)
   └ run 생성, status = DRAFT, 총액은 잠정치
 
 POST /agents/safety/report        (Cloud Tasks, 승인 직전)
@@ -690,6 +801,12 @@ def approval_amount_hash(run: SettlementRun) -> str:
 세부 필드는 각 담당이 자기 에이전트 것만 채운다. 서로 부르지 않으므로 에이전트 간 계약은
 없다. `payload` 최상위 키만 위 표대로 맞춘다.
 
+**집행자의 "후보 `claims` 목록"은 검증을 통과한 receipt에 물린 claim만 포함한다.**
+연결된 `receipts.verified_at`이 `None`이거나 `status = VERIFICATION_FAILED`인 claim은
+후보에서 코드가 미리 걸러내고 집행자 에이전트에게 넘기지 않는다 — "검증된 텍스트
+데이터만 취합하는" 경계는 프롬프트가 아니라 후보 목록을 만드는 코드(`api/src/matching/`
+또는 `api/src/settlements/`, B)가 지킨다.
+
 안전 확인 에이전트의 `risk_report`는 `audit_logs.reason`에 그대로 저장된다.
 **게이트가 아니다.** 이 리포트가 비어 있어도 승인과 송금은 코드 게이트만으로 진행된다.
 
@@ -809,9 +926,12 @@ APPROVAL_TOKEN_TTL_SECONDS=600
 | 6 | 프롬프트 인젝션 시도 영수증 텍스트 | `injection_suspected`, 비신뢰 입력 격리 | A |
 | 7 | 한도 캡 초과 배치 + 토큰 없는 `/payouts` 호출 | **403 거부** | C |
 | 8 | PayPal `FAILED` + `UNCLAIMED` 혼재 결과 | 대조 → 되돌리기 → 재발송 | C |
+| 9 | 파싱은 성공했지만 이미지-파싱 결과 불일치 (예: 사진엔 32,000원, 파싱은 35,000원) | 정산 실행 시 `VERIFICATION_FAILED` 전이, 집행자 후보 목록에서 제외 | B |
 
 2번은 1단계(결정론적 신호), 4번은 2단계(confidence)를 각각 덮는다. 두 경로는 다르므로
-둘 다 필요하다.
+둘 다 필요하다. 9번은 정산 시점 검증 전용이라 2·4번(파싱 시점)과 겹치지 않는다 —
+fixture JSON과 `POST /settlements/runs`의 검증 호출 구현은 B가 채운다(§10 라우트
+소유권과 동일).
 
 ---
 

@@ -341,6 +341,12 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 
 **api**
 - [ ] 결정론적 매칭 — 금액 · 날짜 윈도우 · 가맹점명. **LLM 아님**
+- [ ] `POST /settlements/runs`에서 후보 claim의 receipt마다 이미지↔파싱 결과 검증 —
+      파싱과 별개인 Gemini 단발 호출(이미지당 1회, ADK 아님), 요청 핸들러 안에서
+      동기 실행(새 Cloud Tasks 라우트 아님). 판정만 반환하고 금액은 고치지 않는다.
+      통과 시 `verified_at` 캐싱(재검증 안 함), 실패 시 `status = VERIFICATION_FAILED` +
+      `claim_requests.reason = VERIFICATION_FAILED`로 후보에서 제외. 계약:
+      schema-contract.md "검증" 절
 - [ ] PayPal 결제 원장 조회 및 스냅샷
 - [ ] 정산 배치 생성 (`settlement_run_id`), `SettlementFilter` 적용
 - [ ] 금액 합산·인당 분배 — 코드가 한다
@@ -456,3 +462,4 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 | Slack 워크스페이스 | **데모용 신규** — 실 데이터가 섞이지 않고 인젝션 테스트가 자유롭다 |
 | 스캐폴딩 | **별도 단계 없음** — 각 트랙이 D1~D2에 자기 레포를 직접 세운다 |
 | `settlement_run_id` 형식 | **축약형만 쓴다** (`run_{yymmdd}_{ULID 앞 12자}`) — 전체 ULID면 `sender_item_id`가 PayPal 상한 63자를 넘는다 |
+| 영수증 이미지 검증 단계 추가 (8/18) | **정산 실행 시**(`POST /settlements/runs`), 파싱과 별개인 Gemini 단발 호출(이미지당 1회, ADK 아님, 요청 핸들러 안 동기 실행)로 이미지-파싱 결과 일치를 판정하고, 통과분만 집행자 후보에 포함. `receipts.verified_at`/`verification_signals` 추가, `status`에 `VERIFICATION_FAILED` 신설. 청구자 에이전트의 인입 시점 검토(청구 확정 게이트)와는 다른, 정산 후보 편입 게이트 — 청구자 책임 범위는 안 줄어든다. 인프라 변경 없음(기존 IAM·큐 재사용). 계약 v0.3.0(안) — schema-contract.md, `api/src/schemas/` 반영 완료. fixture 9·구현은 B 담당(`api/src/settlements/`) |

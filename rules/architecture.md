@@ -9,7 +9,7 @@
    web ──────────────┐   시크릿 없음. BFF 프록시.
                      │
                      ▼
-                   api ─────► PayPal, Slack, Gemini(파싱)
+                   api ─────► PayPal, Slack, Gemini(파싱·검증)
                      │        Firestore, GCS
                      │
               Cloud Tasks
@@ -32,6 +32,10 @@
 - Slack webhook 수신 및 서명 검증.
 - 승인 토큰 발급/검증.
 - 영수증 이미지 → 구조화 JSON (Gemini structured output 단발 호출, ADK 아님).
+- 영수증 이미지 ↔ 파싱 결과 검증. **정산 실행 시점**, 파싱과 별개인 Gemini 단발
+  호출로 후보 receipt마다 재확인한다. 통과한 것만 정산 후보에 들어간다. 청구자
+  에이전트의 인입 시점 검토와는 다른, 더 늦은 시점의 별도 게이트다. 상세는
+  `docs/rules/schema-contract.md` "검증" 절.
 - 결정론적 매칭(금액 · 날짜 윈도우 · 가맹점명).
 - Firestore 쓰기의 단일 창구.
 
@@ -60,6 +64,10 @@
 
 3초 넘게 걸리는 일은 전부 Cloud Tasks로 넘긴다. Slack webhook은 3초 안에 200을
 돌려줘야 한다.
+
+**예외 하나 — `POST /settlements/runs`의 이미지 검증 호출.** 이 라우트는 webhook이
+아니라 사람이 버튼을 눌러 트리거하는 동기 액션이라 300초 Cloud Run 타임아웃 안에서
+인라인으로 돈다. 근거와 상세는 `docs/rules/schema-contract.md` "검증" 절 참조.
 
 ```
 webhook → 서명검증 → Firestore raw 저장 → enqueue → 200   (목표 0.5s 이내)

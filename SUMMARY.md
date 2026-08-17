@@ -33,3 +33,4 @@
 | 2026-08-17 | agent#1·backend#7 머지 확인, `plan.md` 진행 현황 재점검 — Track C 체크박스·코드 상태 표·다음 액션을 실제 상태로 갱신 |
 | 2026-08-17 | XLSX 출력(세무사용, 계정과목 컬럼 포함) 구현 — `GET /settlements/runs/{run_id}/export`, `openpyxl` 의존성 추가 |
 | 2026-08-18 | 스키마 계약 v0.2.0 — Track A 델타 1·2 반영. `claim_requests.reason`(필수 enum 4값) 추가 및 `receipt_id` nullable 완화, `receipts.slack_channel_id`·`slack_message_ts`(nullable) 추가. 문서 → `backend/src/schemas/` → 태그 순으로 반영, `agent` 핀·`web` 타입 재생성은 대기 |
+| 2026-08-18 | 스키마 계약 v0.3.0(안) — 영수증 이미지 검증 단계 추가. 정산 실행 시(`POST /settlements/runs`) 파싱과 별개인 Gemini 단발 호출(이미지당 1회)로 이미지-파싱 일치를 판정, 통과분만 집행자 후보에 포함. 청구자 에이전트의 인입 시점 검토와는 다른 별도 게이트. `receipts.verified_at`·`verification_signals`·`VERIFICATION_FAILED` 상태 신설. `seed_firestore.py`에 fixture 검증 보정 추가. 인프라 변경 없음(기존 IAM·큐 재사용). 구현·fixture 9는 B 담당으로 남김, 아직 `schema:` 커밋·태그 전 |
