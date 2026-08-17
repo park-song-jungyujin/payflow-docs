@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Payflow 작업 흐름</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --border: #d8d8d8;
+    --muted: #666;
+    --accent-a: #2563eb;
+    --accent-b: #059669;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 0.2rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 2.5rem;
+  }
+  section {
+    margin-bottom: 3rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+  }
+  section h2 {
+    font-size: 1.2rem;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    color: white;
+  }
+  .badge-a { background: var(--accent-a); }
+  .badge-b { background: var(--accent-b); }
+  .diagram {
+    overflow-x: auto;
+    margin: 1rem 0;
+    padding: 0.5rem;
+  }
+  .notes {
+    font-size: 0.88rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 0.8rem;
+    margin-top: 1rem;
+  }
+  .notes ul { margin: 0.3rem 0; padding-left: 1.3rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Payflow — 청구자 / 집행자 작업 흐름</h1>
+  <p class="subtitle">docs/plan.md, docs/rules/architecture.md 기준 정리</p>
+
+  <section>
+    <h2><span class="badge badge-a">Track A</span> 청구자 경험 — Slack 인입 → 청구 확정</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    U["직원이 Slack에\n영수증 이미지 전송"] --> W["api: webhook 수신\n서명 검증, 0.5s 내 200 ack"]
+    W --> R["Firestore에 raw 저장\nCloud Tasks enqueue"]
+    R --> P["api: Gemini structured output\n영수증 → JSON 단발 호출\n계정과목 1차 매핑"]
+    P --> M["api: PII 마스킹\n원본은 GCS에만 저장"]
+    M --> AG["청구자 에이전트\n파싱 결과가 영수증과 맞는지 검토"]
+    AG --> D{판단}
+    D -->|일치| C["claims 쓰기\n업무용/개인용 분류"]
+    D -->|불일치·저신뢰| RQ["재요청 문안 작성\n비신뢰 입력은 &lt;untrusted_receipt_text&gt; 격리"]
+    RQ --> DM1["api: 재요청 DM 발송"]
+    DM1 --> U
+    C --> ST["claim_request.status = PENDING"]
+    ST --> WAIT["미청구 건 대기"]
+    WAIT -->|무응답| REM["Cloud Tasks schedule_time\n재촉 DM 1회"]
+    REM --> ST2["status: REMINDED"]
+    ST2 -->|응답| RESP["status: RESPONDED"]
+    ST2 -->|계속 무응답| EXP["status: EXPIRED"]
+    RESP --> FIN["정산 실행 후\n지급 결과 통지\n'10건 중 8건 지급, 2건 사유'"]
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li>3초 규칙: Slack webhook은 무거운 작업 없이 즉시 ack, 실제 처리는 Cloud Tasks로 넘긴다.</li>
+        <li>금액 계산과 상태 전이는 전부 <code>api</code> 코드가 하고, 청구자 에이전트는 draft 문서(재요청 문안, 분류 판단)만 만든다.</li>
+        <li>비신뢰 영수증 텍스트는 프롬프트 인젝션 방지를 위해 격리 블록으로 감싸 전달한다.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="badge badge-b">Track B</span> 집행자 경험 — 매칭 → 승인 카드</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    START["집행자가 web 대시보드 진입\n정산 기간 선택 또는\n자연어 입력 '8월 외주 개발 건만 정산해줘'"] --> NL{입력 방식}
+    NL -->|자연어| CONV["집행자 에이전트\n자연어 → SettlementFilter 변환"]
+    NL -->|버튼| FILT["필터 직접 선택"]
+    CONV --> CONF["필터 확인 카드 표시"]
+    FILT --> CONF
+    CONF --> EXEC["실행 트리거"]
+    EXEC --> MATCH["api: 결정론적 매칭\n금액·날짜 윈도우·가맹점명 (LLM 아님)"]
+    MATCH --> LEDGER["api: PayPal 원장 조회 및 스냅샷"]
+    LEDGER --> RUN["정산 배치 생성 settlement_run_id\n금액 합산·인당 분배 (코드)"]
+    RUN --> FX["환율 승인 시점 고정"]
+    FX --> AMBIG{매칭 실패/애매 건?}
+    AMBIG -->|있음| AG2["집행자 에이전트\n매칭 실패 판단, 이상징후 서술\n미분류 계정과목 판단"]
+    AG2 --> CARD
+    AMBIG -->|없음| CARD["요약 카드 렌더\n정산 명세 + 위험 알림"]
+    CARD --> SAFE["안전 확인 에이전트\n승인 직전 리스크 리포트 (조언, 게이트 아님)"]
+    SAFE --> APPROVE["집행자가 승인 카드에서 승인 클릭 (HITL)"]
+    APPROVE --> TOKEN["api: 승인 토큰 발급\nrun_id + 금액 해시 바인딩, 10분 만료"]
+    TOKEN --> GATE{토큰 검증\n코드 게이트}
+    GATE -->|무효/없음| REJECT["/payouts 403"]
+    GATE -->|유효| CAS["draft → approved\nFirestore CAS 전이"]
+    CAS --> LIMIT["한도 캡 검사\n배치총액·건별·월간누적"]
+    LIMIT --> PAYOUT["PayPal Payouts 호출\nsender_batch_id = settlement_run_id 멱등"]
+    PAYOUT --> RECON["지급 결과 대조"]
+    RECON -->|성공| SETTLED["status: settled"]
+    RECON -->|실패/미수취| FAILED["status: failed/unclaimed\n취소 후 재발송 제안"]
+    SETTLED --> XLSX["XLSX 출력 (세무사용, 계정과목 포함)"]
+    SETTLED --> NOTIFY["청구자에게 지급 결과 통지"]
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li>승인 토큰은 LLM 컨텍스트에 절대 들어가지 않으며, 검증은 <code>api/src/guards/</code> 코드가 한다.</li>
+        <li>안전 확인 에이전트는 리스크를 서술만 하고 차단 권한이 없다 — 실제 차단은 토큰 검증·한도 캡·CAS 전이 코드가 담당.</li>
+        <li>환율은 승인 시점에 고정되어 정산 배치에 박히므로, 승인 후 환율이 바뀌어도 토큰이 무효화되지 않는다.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+</body>
+</html>

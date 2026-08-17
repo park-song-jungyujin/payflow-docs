@@ -23,3 +23,8 @@
 | 2026-08-17 | (hotfix) `dev`→`development` 개명(Firestore ID 4자 제약) 후 `development`·`deploy` DB 실제 생성, fixture 재시딩. 부트스트랩 스크립트 `PYTHONPATH` 누락 버그 수정 |
 | 2026-08-17 | `backend/infra/`에 Terraform 작성(Cloud Run 3·Firestore·Cloud Tasks·Secret Manager·IAM) — 이미 떠 있던 리소스를 import로 편입, `payflow-api`를 default compute SA(roles/editor)에서 전용 SA로 마이그레이션, GitHub Actions CI(WIF keyless) 추가, `gcp-bootstrap.sh`를 로컬 셋업·시딩 전용으로 축소 |
 | 2026-08-17 | IAM 격리(절대 규칙 1) 라이브 재검증 — 드리프트 없음, 4개 시크릿 모두 `payflow-agent` 바인딩 없음 확인. 심사 시연용 403 데모 절차를 `docs/infra/iam-403-demo.md`로 문서화(정적 조회 + 임시 impersonate 캡처 2가지 방법) |
+| 2026-08-17 | 방법 B 실제 실행 — `agent` SA에 임시 impersonate 권한 부여 → PayPal 시크릿 접근 시도해 실제 `PERMISSION_DENIED` 캡처 → 즉시 회수·재확인. `iam-403-demo.md`에 실제 에러 문구 반영 |
+| 2026-08-17 | `DRAFT→APPROVED`·`APPROVED→EXECUTING` CAS 동시성 라이브 검증(각 5개 동시 요청, 1개만 통과 확인) 중 `/payouts` 500 버그 발견 — Cloud Tasks enqueue 미구현(`NotImplementedError`)이 큐 프로비저닝 후 노출된 것. 실제 enqueue 구현 + IAM 2건 추가로 수정, 재검증 완료(PR #5) |
+| 2026-08-17 | PayPal/Slack 시크릿 4개를 Cloud Run `payflow-api` env로 실제 주입 — `secret_key_ref` Terraform 추가, 시크릿 실값 최초 등록, Cloud Run 서비스 에이전트 IAM 바인딩 누락 발견해 추가 |
+| 2026-08-17 | SLACK_BOT_TOKEN 재발급 반영, execute-payout 실검증 중 PayPal이 KRW 통화를 지원 안 함을 발견 |
+| 2026-08-17 | PayPal 지원 통화 검증 + 승인 시점 FX 환산(schema-contract.md §4) 구현, 캡 검사 미환산 버그도 수정 (PR #6) |

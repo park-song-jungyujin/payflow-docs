@@ -72,9 +72,21 @@ ERROR: (gcloud.secrets.versions.access) PERMISSION_DENIED: Failed to impersonate
 ```
 
 1단계로 impersonate 권한을 부여한 뒤 2단계를 실행하면 그다음 관문인
-secretAccessor에서 막혀야 한다 — 아직 실제로 캡처하지 않았으므로 시연 전에
-한 번 리허설해서 에러 문구(`permission: secretmanager.versions.access` 예상)를
-확인해둘 것.
+secretAccessor에서 막힌다 — 2026-08-17 실제로 3단계 전체(부여 → 캡처 → 회수)를
+실행해 확인했다:
+
+```
+ERROR: (gcloud.secrets.versions.access) PERMISSION_DENIED: Permission
+'secretmanager.versions.access' denied on resource (or it may not exist).
+...
+  permission: secretmanager.versions.access
+  reason: IAM_PERMISSION_DENIED
+```
+
+부여 직후 바로 시도하면 IAM 바인딩 전파 지연(수십 초)으로 1단계 에러
+(`iam.serviceAccounts.getAccessToken`)가 그대로 재현될 수 있다 — 45초 정도
+기다렸다 재시도하면 된다. 회수는 `remove-iam-policy-binding` 직후
+`get-iam-policy`로 바인딩이 비었는지 재확인했다.
 
 ## 리허설 체크리스트
 
