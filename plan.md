@@ -42,7 +42,7 @@
 **결정 8건** — 아래 [확정된 것](#확정된-것) 참조
 
 **스키마 계약** — [`rules/schema-contract.md`](rules/schema-contract.md)에 확정본.
-컬렉션 9종 · ID 체계 · 환율 · 계정과목 라우팅 · 승인 토큰 · 라우트 · 환경변수 · fixture 8종
+컬렉션 8종 · ID 체계 · 환율 · 계정과목 라우팅 · 승인 토큰 · 라우트 · 환경변수 · fixture 8종
 
 **GCP 부트스트랩** — 프로젝트 `payflow-hackathon-2026`, API 4종 활성화,
 Firestore Native(`asia-northeast3`), Terraform·uv 설치. 전 과정 `infra/gcp-bootstrap.sh`로 재현 가능
@@ -230,7 +230,7 @@ Slack은 실제 팀 워크스페이스가 아니라 **데모용을 새로 판다
 **10항목 전부 [`rules/schema-contract.md`](rules/schema-contract.md)에 확정본으로 들어갔다.**
 아래는 무엇을 덮었는지 확인용 목록이고, 정의 자체는 확정본이 단일 소스다.
 
-- [x] **Firestore 컬렉션 · 필드 · 상태 enum** — 컬렉션 9종. 상태값은 **전부 `UPPER_SNAKE`**,
+- [x] **Firestore 컬렉션 · 필드 · 상태 enum** — 컬렉션 8종. 상태값은 **전부 `UPPER_SNAKE`**,
       상태 필드 이름은 전 컬렉션 `status`
 - [x] **ID 체계** — ULID 기반. `sender_batch_id = {run_id}`,
       `sender_item_id = {run_id}:{recipient_id}`.
