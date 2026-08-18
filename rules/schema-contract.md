@@ -116,17 +116,18 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 |---|---|---|
 | `receipt_id` | str | `rct_{ulid}` |
 | `recipient_id` | str | |
-| `image_gcs_uri` | str | 원본 이미지 |
-| `raw_text_gcs_uri` | str | 파싱 원문. 에이전트의 비신뢰 입력이 여기서 온다 |
+| `image_gcs_uri` | str \| None | 원본 이미지 |
+| `raw_text_gcs_uri` | str \| None | 파싱 원문. 에이전트의 비신뢰 입력이 여기서 온다 |
+| `slack_file_id` | str \| None | `F0123ABC`. Slack 재전송 dedup 키 |
 | `slack_channel_id` | str \| None | 영수증을 올린 원 메시지의 채널 |
 | `slack_message_ts` | str \| None | 같은 메시지의 ts. 스레드 답글의 `thread_ts`로 넣는다 |
 | `merchant_name` | str \| None | 마스킹 후 값. 결정론적 매칭이 쓴다 |
 | `transaction_date` | date \| None | **결제일.** `created_at`(업로드 시각)과 다르다 |
 | `parsed_amount_minor` | int \| None | |
-| `currency` | str | |
+| `currency` | str \| None | |
 | `account_category_code` | enum \| None | §5 |
-| `category_source` | enum | `LLM_PARSE` / `DETERMINISTIC_FALLBACK` / `EXECUTOR_AGENT` / `HUMAN` |
-| `parse_signals` | map | §5 |
+| `category_source` | enum \| None | `LLM_PARSE` / `DETERMINISTIC_FALLBACK` / `EXECUTOR_AGENT` / `HUMAN` |
+| `parse_signals` | map \| None | §5 |
 | `llm_confidence` | float \| None | 0.0~1.0 |
 | `verified_at` | Timestamp \| None | 검증 통과 시각. 미검증이거나 검증 실패면 `None` |
 | `verification_signals` | map \| None | 아래 "검증" 참조 |
@@ -144,6 +145,9 @@ DM으로 보낸 청구 확인 메시지의 ts라서 이 용도로 쓸 수 없다
 **둘 다 nullable이다.** Slack 인입이 아닌 경로(fixture 시딩, 수동 등록)로 만들어진
 영수증에는 값이 없다. 비어 있으면 스레드 답글을 포기하고 DM으로 폴백한다.
 한쪽만 있는 상태는 만들지 않는다 — 같이 쓰거나 같이 비운다.
+
+**`slack_file_id` 중복 검사와 `receipts` 생성은 하나의 Firestore 트랜잭션 안에서 한다.**
+검사와 쓰기가 갈라지면 Slack이 같은 파일 이벤트를 재전송할 때 영수증이 두 건 생긴다.
 
 상태 의미:
 
@@ -267,7 +271,7 @@ def verify_passed(r: Receipt, s: VerificationSignals) -> bool:
 | `recipient_id` | str | |
 | `receipt_id` | str \| None | 영수증에 매이지 않는 사유가 있다. 아래 |
 | `reason` | enum | **필수.** 왜 보내는지. 아래 |
-| `slack_dm_ts` | str | 버튼 응답을 원 메시지에 붙일 때 쓴다 |
+| `slack_dm_ts` | str \| None | 버튼 응답을 원 메시지에 붙일 때 쓴다. 생성 시점엔 아직 DM 전이라 비어 있다 |
 | `reminded_at` | Timestamp \| None | |
 | `expires_at` | Timestamp | 생성 시각 + `CLAIM_REQUEST_TTL_SECONDS` |
 | `status` | enum | `PENDING` / `REMINDED` / `RESPONDED` / `EXPIRED` |
