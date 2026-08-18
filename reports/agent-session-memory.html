@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>청구자·집행자 세션 메모리 도입 보고서</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #5a5a5a;
+    --border: #d8d8d8;
+    --border-strong: #b8b8b8;
+    --accent: #2563eb;
+    --warn-bg: #fff7e6;
+    --warn-border: #e0a72d;
+    --rec-bg: #eef5ff;
+    --rec-border: #2563eb;
+    --zebra: #fafafa;
+    --code-bg: #f2f2f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 5rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, sans-serif;
+    line-height: 1.65;
+  }
+  main { max-width: 1150px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; border-bottom: 2px solid var(--border-strong); padding-bottom: .4rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.6rem; color: var(--text); }
+  p { max-width: 78ch; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+  nav.toc {
+    border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.5rem;
+    background: var(--zebra); max-width: 480px;
+  }
+  nav.toc ol { margin: .3rem 0 0; padding-left: 1.2rem; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0 1.5rem; font-size: .92rem; }
+  caption { text-align: left; font-weight: 600; margin-bottom: .4rem; }
+  th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+  thead th { background: #f0f0f0; }
+  tbody tr:nth-child(even) { background: var(--zebra); }
+  code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 4px; font-size: .88em; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .9rem 1.1rem; overflow-x: auto; font-size: .84rem; line-height: 1.5;
+  }
+  .callout {
+    border-left: 4px solid; border-radius: 4px; padding: .8rem 1rem; margin: 1.2rem 0;
+    max-width: 78ch; font-size: .93rem;
+  }
+  .callout .label { font-weight: 700; display: block; margin-bottom: .25rem; }
+  .callout.warning { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout.recommendation { background: var(--rec-bg); border-color: var(--rec-border); }
+  .callout.decision { background: #f0fbf3; border-color: #2f9e51; }
+  .diagram-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: #fff; }
+  svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .fact { color: var(--text); }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 700; padding: .1rem .45rem; border-radius: 4px; margin-right: .3rem; }
+  .tag.fact { background: #eaeaea; }
+  .tag.decision { background: #dff5e4; color: #1e6b34; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .82rem; }
+  a.backtop { position: fixed; bottom: 1.2rem; right: 1.2rem; background: var(--accent); color: #fff;
+    text-decoration: none; padding: .5rem .8rem; border-radius: 999px; font-size: .8rem; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>청구자·집행자 세션 메모리 도입</h1>
+  <p class="subtitle">Payflow 세 에이전트 중 반복 상호작용이 있는 두 에이전트에 대화 이어가기 저장소를 추가한다</p>
+  <p class="meta">작성일 2026-08-18 · Track C(송재훈) · 대상 레포: <code>docs</code>, <code>payflow-agent</code>, <code>payflow-backend/infra</code></p>
+</header>
+
+<section id="exec-summary">
+<h2>Executive Summary</h2>
+<ul>
+  <li><span class="tag decision">결정</span> 세션 저장소는 <strong><code>agent</code> 서비스가 직접 소유</strong>한다. 대상은 <strong>청구자·집행자 두 에이전트</strong>뿐이고, 안전 확인 에이전트는 1회성 호출이라 제외한다. "대화를 이어가는 상황"은 실시간 채팅이 아니라 <strong>같은 실행 단위(청구 요청/정산 실행)의 반복 호출을 이어붙이는 것</strong>으로 정의했다.</li>
+  <li><span class="tag fact">사실</span> 기존 아키텍처는 "agent는 Firestore에 api 툴을 통해서만 접근"을 명시적으로 금지 규칙으로 두고 있었다. 이번 결정으로 <code>agent_sessions</code> 컬렉션 하나에 한해 <strong>명시적 예외</strong>를 만들었다.</li>
+  <li><span class="tag fact">사실</span> <code>claimant/</code>·<code>executor/</code>의 실제 에이전트 로직(<code>agent.py</code>)은 아직 구현돼 있지 않다(각각 Track A·B 담당, 현재 라우트는 <code>501</code> 스텁). 이번 작업은 <strong>그 에이전트들이 나중에 붙일 메모리 계층</strong>까지만 다룬다 — 실제 업무 로직은 범위 밖.</li>
+  <li>Firestore는 스키마리스라 DDL 마이그레이션은 없다. 배포는 <strong>IAM 적용 → agent 배포</strong> 순서만 지키면 된다.</li>
+  <li><span class="tag decision">위험 고지</span> Firestore Admin SDK는 Security Rules를 우회하므로, <code>agent</code> SA에 부여한 <code>datastore.user</code>는 <strong>컬렉션 단위로 좁힐 수 없다</strong>. "<code>agent_sessions</code>만 쓴다"는 경계는 IAM이 아니라 코드 컨벤션과 리뷰로만 지켜진다.</li>
+  <li>세션 요약은 LLM이 아니라 코드가 결정론적으로 생성한다. 압축된 요약이 다음 세션에 "이미 검토된 정보"로 재유입되며 인젝션 검열을 우회하는 경로가 되는 것을 막기 위함이다.</li>
+</ul>
+</section>
+
+<nav class="toc" aria-label="목차">
+  <strong>목차</strong>
+  <ol>
+    <li><a href="#background">배경 — 왜 요청과 기존 구조가 맞지 않았나</a></li>
+    <li><a href="#decisions">확인된 결정 3가지</a></li>
+    <li><a href="#architecture">데이터 흐름</a></li>
+    <li><a href="#schema">스키마: <code>agent_sessions</code></a></li>
+    <li><a href="#code">구현</a></li>
+    <li><a href="#migration">배포·마이그레이션 절차</a></li>
+    <li><a href="#risks">한계와 남은 위험</a></li>
+    <li><a href="#next">다음 단계</a></li>
+  </ol>
+</nav>
+
+<section id="background">
+<h2>1. 배경 — 왜 요청과 기존 구조가 맞지 않았나</h2>
+<p>
+원 요청은 "사용자별 대화 기록이 DB에 저장되고, 세션이 이어질 때는 전체 기록이,
+새 세션에서는 이전 세션 요약이 들어가는" claude-mem류 구조였다. 그런데 Payflow의
+세 에이전트는 애초에 <strong>사람과 실시간으로 채팅하는 구조가 아니다</strong> —
+<code>api</code>가 파이프라인 단계마다(영수증 인입 직후 / 정산 실행 시 / 승인 카드
+렌더 직전) Cloud Tasks로 <strong>한 번씩</strong> 호출하고, 결과는 <code>agent_drafts</code>에
+draft로만 쓴다. ADK 세션도 <code>InMemorySessionService</code>로, "재시작 후 살아남을
+필요가 없다"는 게 기존 설계 결정이었다.
+</p>
+<div class="callout warning">
+  <span class="label">주의 — 해커톤 필수조건과의 접점</span>
+  공식 규정은 "단순 chatbot 구조는 탈락 사유"라고 명시한다. 이번 결정은 사람과의
+  실시간 채팅 UI를 만드는 게 아니라 <strong>기존 파이프라인 호출 사이의 문맥 연속성</strong>을
+  추가하는 것으로 범위를 좁혔다 — 이 구분을 데모/제출물 설명에서도 유지해야 한다.
+</div>
+</section>
+
+<section id="decisions">
+<h2>2. 확인된 결정 3가지</h2>
+<table>
+<caption>구현 전 사용자에게 확인받은 항목</caption>
+<thead><tr><th>질문</th><th>선택지</th><th>결정</th><th>근거</th></tr></thead>
+<tbody>
+<tr>
+  <td>저장소 소유</td>
+  <td><code>api</code> 소유 (권장이었음) vs <code>agent</code> 소유</td>
+  <td><strong>agent 소유</strong></td>
+  <td>기존 "Firestore는 api 툴로만" 규칙에 대한 명시적 예외 필요. §5 참조.</td>
+</tr>
+<tr>
+  <td>적용 범위</td>
+  <td>집행자만 / 집행자+청구자 / 세 에이전트 전부</td>
+  <td><strong>집행자 + 청구자</strong></td>
+  <td>안전 확인은 승인 직전 1회성 리포트라 이어갈 대화 자체가 없음.</td>
+</tr>
+<tr>
+  <td>"대화를 이어가는 상황"의 정의</td>
+  <td>새 채팅 UI / 같은 실행 단위 반복 호출 / 감사·재현 로그만</td>
+  <td><strong>같은 실행 단위의 반복 호출을 이어붙임</strong></td>
+  <td>실시간 채팅 UI 없이도 기존 파이프라인 구조 안에서 구현 가능. 챗봇 탈락 조건도 회피.</td>
+</tr>
+</tbody>
+</table>
+</section>
+
+<section id="architecture">
+<h2>3. 데이터 흐름</h2>
+<div class="diagram-wrap">
+<svg viewBox="0 0 980 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="세션 메모리 데이터 흐름도">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+  </defs>
+  <style>
+    .box { fill: #eef5ff; stroke: #2563eb; stroke-width: 1.4; rx: 8; }
+    .box.store { fill: #fff7e6; stroke: #e0a72d; }
+    .box.excluded { fill: #f2f2f2; stroke: #999; stroke-dasharray: 4 3; }
+    .lbl { font: 600 13px -apple-system, sans-serif; fill: #1a1a1a; }
+    .sub { font: 11px -apple-system, sans-serif; fill: #5a5a5a; }
+    .edge { stroke: #444; stroke-width: 1.3; fill: none; marker-end: url(#arrow); }
+    .edge.dashed { stroke-dasharray: 5 4; }
+  </style>
+
+  <rect class="box" x="30" y="40" width="150" height="60"/>
+  <text class="lbl" x="105" y="65" text-anchor="middle">api</text>
+  <text class="sub" x="105" y="82" text-anchor="middle">Cloud Tasks로 호출</text>
+
+  <rect class="box" x="270" y="20" width="180" height="60"/>
+  <text class="lbl" x="360" y="45" text-anchor="middle">청구자 에이전트</text>
+  <text class="sub" x="360" y="62" text-anchor="middle">entity_id = claim_request_id</text>
+
+  <rect class="box" x="270" y="110" width="180" height="60"/>
+  <text class="lbl" x="360" y="135" text-anchor="middle">집행자 에이전트</text>
+  <text class="sub" x="360" y="152" text-anchor="middle">entity_id = settlement_run_id</text>
+
+  <rect class="box excluded" x="270" y="200" width="180" height="55"/>
+  <text class="lbl" x="360" y="223" text-anchor="middle" fill="#666">안전 확인 에이전트</text>
+  <text class="sub" x="360" y="240" text-anchor="middle">대상 아님 — 1회성 호출</text>
+
+  <rect class="box store" x="620" y="70" width="220" height="90"/>
+  <text class="lbl" x="730" y="95" text-anchor="middle">Firestore</text>
+  <text class="lbl" x="730" y="115" text-anchor="middle">agent_sessions</text>
+  <text class="sub" x="730" y="135" text-anchor="middle">agent/shared/memory.py</text>
+  <text class="sub" x="730" y="150" text-anchor="middle">agent 서비스가 직접 읽기·쓰기</text>
+
+  <rect class="box" x="620" y="200" width="220" height="60"/>
+  <text class="lbl" x="730" y="225" text-anchor="middle">agent_drafts</text>
+  <text class="sub" x="730" y="242" text-anchor="middle">기존 경로 — api만 읽음</text>
+
+  <path class="edge" d="M180,65 C220,45 240,45 270,45"/>
+  <path class="edge" d="M180,80 C220,110 240,120 270,135"/>
+
+  <path class="edge" d="M450,45 C520,55 560,70 620,95"/>
+  <text class="sub" x="490" y="55">턴 기록 · 요약 조회</text>
+
+  <path class="edge" d="M450,135 C520,120 560,110 620,105"/>
+
+  <path class="edge dashed" d="M450,55 C540,150 560,190 620,220"/>
+  <path class="edge dashed" d="M450,145 C520,180 560,200 620,225"/>
+  <text class="sub" x="500" y="195">draft 결과(기존 경로, 변경 없음)</text>
+
+  <path class="edge" d="M840,180 C860,300 500,320 180,290 C120,280 105,220 105,100" fill="none"/>
+  <text class="sub" x="470" y="335" text-anchor="middle">agent_drafts는 api가 읽어 web에 전달 (기존 경로, 변경 없음)</text>
+</svg>
+</div>
+<p class="fact">
+실선은 이번 작업으로 추가된 경로(에이전트 ↔ <code>agent_sessions</code>), 점선은
+기존 <code>agent_drafts</code> 경로다. 에이전트 간 직접 호출은 여전히 없다 —
+각자 자기 <code>entity_id</code>로만 <code>agent_sessions</code>에 접근한다.
+</p>
+</section>
+
+<section id="schema">
+<h2>4. 스키마: <code>agent_sessions</code></h2>
+<table>
+<caption>세션 문서</caption>
+<thead><tr><th>필드</th><th>타입</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td><code>session_id</code></td><td>str</td><td><code>{agent_type}__{entity_id}</code>. 문서 ID로도 사용</td></tr>
+<tr><td><code>agent_type</code></td><td>enum</td><td><code>CLAIMANT</code> / <code>EXECUTOR</code></td></tr>
+<tr><td><code>entity_id</code></td><td>str</td><td><code>claim_request_id</code> 또는 <code>settlement_run_id</code></td></tr>
+<tr><td><code>actor_ref</code></td><td>str | None</td><td><code>recipient_id</code> 등 — 이전 세션 요약 검색 키</td></tr>
+<tr><td><code>status</code></td><td>enum</td><td><code>ACTIVE</code> / <code>CLOSED</code></td></tr>
+<tr><td><code>turns</code></td><td>list[Turn]</td><td>아래 참조</td></tr>
+<tr><td><code>summary</code></td><td>str | None</td><td><code>CLOSED</code> 전환 시 <strong>코드</strong>가 생성. 금액 없음</td></tr>
+<tr><td><code>created_at</code>, <code>updated_at</code></td><td>Timestamp</td><td></td></tr>
+</tbody>
+</table>
+<table>
+<caption><code>Turn</code></caption>
+<thead><tr><th>필드</th><th>타입</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td><code>turn_id</code></td><td>str</td><td>ULID</td></tr>
+<tr><td><code>role</code></td><td>enum</td><td><code>INPUT</code> / <code>OUTPUT</code></td></tr>
+<tr><td><code>content</code></td><td>str</td><td>원문 그대로. <code>&lt;untrusted_*&gt;</code> 래핑을 벗기지 않는다</td></tr>
+<tr><td><code>untrusted</code></td><td>bool</td><td>영수증·Slack·파일명에서 왔으면 true</td></tr>
+<tr><td><code>doc_refs</code></td><td>list[str]</td><td>관련 Firestore 문서 ID. 금액은 넣지 않는다</td></tr>
+</tbody>
+</table>
+<div class="callout recommendation">
+  <span class="label">권고 — 요약은 왜 코드가 만드는가</span>
+  절대 규칙 3("금액 계산은 LLM이 하지 않는다")의 연장이다. LLM이 세션을 요약하면,
+  영수증에 심어진 인젝션 문구가 다음 세션에 <em>"시스템이 이미 검토한 요약"</em>이라는
+  더 신뢰받는 형태로 재유입될 수 있다. 요약을
+  <code>"{턴 수}턴, 관련 문서 {doc_refs}, 상태 {status}"</code> 같은 결정론적 템플릿으로
+  고정하면 이 경로 자체가 없다.
+</div>
+</section>
+
+<section id="code">
+<h2>5. 구현</h2>
+<table>
+<caption>변경 파일</caption>
+<thead><tr><th>파일</th><th>레포</th><th>내용</th></tr></thead>
+<tbody>
+<tr><td><code>agent/shared/memory.py</code></td><td>agent (신규)</td><td>Firestore 클라이언트, <code>AgentSession</code>/<code>Turn</code> Pydantic 모델, <code>get_or_create_session</code>·<code>append_turn</code>·<code>close_session</code>·<code>find_prior_session_summary</code>·<code>fetch_full_session</code></td></tr>
+<tr><td><code>agent/shared/memory_tools.py</code></td><td>agent (신규)</td><td>ADK 툴 <code>fetch_full_session_history</code> — 과거 세션 원문 전체를 필요할 때만 조회</td></tr>
+<tr><td><code>agent/pyproject.toml</code></td><td>agent</td><td><code>google-cloud-firestore&gt;=2.19</code> 추가</td></tr>
+<tr><td><code>backend/infra/iam.tf</code></td><td>backend</td><td><code>agent</code> SA에 <code>roles/datastore.user</code> 신규 부여(기존엔 <code>api</code> SA만)</td></tr>
+<tr><td><code>docs/rules/schema-contract.md</code></td><td>docs</td><td>§2 <code>agent_sessions</code> 신설, §9 "세션 메모리" 절 신설</td></tr>
+<tr><td><code>docs/rules/architecture.md</code>, <code>docs/rules/agent-tools.md</code>, <code>agent/CLAUDE.md</code></td><td>docs, agent</td><td>"Firestore SDK 직접 쓰기 금지" 규칙에 예외 반영</td></tr>
+</tbody>
+</table>
+<h3>왜 턴 기록이 LLM 툴이 아닌가</h3>
+<p>
+현재 세션 히스토리 로드와 턴 기록은 진입점(<code>agent/main.py</code>가 될 코드)이
+호출 전후로 직접 수행하는 배관(plumbing)이다. "기록을 남길지 말지"는 LLM이 판단할
+문제가 아니라서 툴로 노출하지 않았다 — <code>agent-tools.md</code>의 "툴 하나는 한
+가지 일만"과 일치한다. LLM에 노출한 유일한 관련 툴은 <code>fetch_full_session_history</code>
+하나뿐이다 — 요약만으로 부족할 때 선택적으로 과거 원문을 당겨오는 용도.
+</p>
+<h3>검증</h3>
+<p>
+Firestore 없이도 로직을 확인하려고 페이크 클라이언트로 스모크 테스트를 돌렸다:
+세션 생성 → Firestore에 반영 → 같은 <code>entity_id</code>로 재조회 시 턴이 이어짐 →
+비신뢰 래핑이 그대로 보존됨 → 종료 시 요약에 금액 없이 문서 ID·턴 수만 남음 →
+<code>actor_ref</code>로 이전 세션 요약 조회 성공 → 전체 히스토리 재조회 성공,
+모두 통과.
+</p>
+</section>
+
+<section id="migration">
+<h2>6. 배포·마이그레이션 절차</h2>
+<p>Firestore는 스키마리스라 DDL은 없다. 새 컬렉션이라 기존 문서 백필도 필요 없다.</p>
+<ol>
+<li><code>docs</code>: <code>rules/schema-contract.md</code> — <code>schema:</code> 커밋 (본문에 영향 레포 명시)</li>
+<li><code>backend/infra</code>: <code>terraform apply</code>로 <code>agent</code> SA의 <code>datastore.user</code> 바인딩 적용</li>
+<li><code>agent</code>: 배포. <strong>순서를 바꾸면 안 된다</strong> — IAM 적용 전에 배포하면 첫 Firestore 접근에서 <code>PermissionDenied</code>로 즉시 실패한다(조용한 실패는 없다)</li>
+<li>Track A·B가 각자 <code>claimant/</code>·<code>executor/</code>의 <code>agent.py</code>를 구현할 때 <code>shared/memory.py</code>를 사용</li>
+</ol>
+<div class="callout warning">
+  <span class="label">주의 — 복합 색인</span>
+  <code>find_prior_session_summary</code>는 <code>agent_type</code>·<code>actor_ref</code>·<code>status</code>
+  동등 필터 3개에 <code>updated_at</code> 정렬을 더한 쿼리라 Firestore 복합 색인이
+  필요하다. 이 프로젝트는 Terraform에 색인 리소스를 두지 않는 관례라, 첫 호출 시
+  <code>FailedPrecondition</code>과 함께 콘솔 링크가 온다 — 그 링크로 만들면 된다.
+  데모 촬영 전에 한 번 트리거해서 미리 만들어 둘 것(색인 생성에 수 분 소요될 수 있음).
+</div>
+</section>
+
+<section id="risks">
+<h2>7. 한계와 남은 위험</h2>
+<div class="callout warning">
+  <span class="label">위험 — IAM이 컬렉션 단위로 못 좁혀짐</span>
+  Firestore Admin SDK(서버 SDK)는 Security Rules를 우회한다. 즉 <code>agent</code> SA에
+  부여한 <code>roles/datastore.user</code>는 <code>agent_sessions</code> 뿐 아니라
+  <code>receipts</code>·<code>settlement_runs</code> 등 다른 모든 컬렉션도 기술적으로
+  읽고 쓸 수 있게 만든다. "이 컬렉션 하나만 쓴다"는 경계는 <code>agent/shared/memory.py</code>가
+  유일한 창구라는 <strong>코드 컨벤션과 리뷰</strong>로만 지켜진다. 절대 규칙 1(agent는
+  PayPal 자격증명 접근 불가)은 여전히 별도 IAM으로 강제되므로 영향이 없지만, 신뢰
+  경계 문서의 정확성을 위해 명시해 둔다.
+</div>
+<div class="callout warning">
+  <span class="label">범위 밖 — claimant/executor 실제 로직 미구현</span>
+  <code>agent/claimant/</code>·<code>agent/executor/</code>는 <code>__init__.py</code>만
+  있는 빈 상태이고 <code>agent/main.py</code>의 해당 라우트는 <code>501</code> 스텁이다
+  ("로직은 각 트랙(A/B) 담당"이라고 코드 주석에 명시돼 있음). 이번 작업은 그 두
+  에이전트가 붙일 <strong>메모리 계층만</strong> 준비했고, 파싱 결과 검토·자연어→필터
+  변환 같은 실제 업무 로직은 만들지 않았다 — Track C 담당 범위 밖이다.
+</div>
+</section>
+
+<section id="next">
+<h2>8. 다음 단계</h2>
+<ul>
+  <li><code>schema:</code> 커밋 + 태그 + 전원 통보 (§13 변경 절차)</li>
+  <li>Track A·B가 <code>claimant/</code>·<code>executor/</code> 에이전트 구현 시 <code>shared/memory.py</code> 연결</li>
+  <li>데모 전 <code>find_prior_session_summary</code> 복합 색인 1회 생성</li>
+  <li><code>backend/infra</code> <code>terraform apply</code> 승인 및 반영</li>
+</ul>
+</section>
+
+<footer>
+  Payflow 내부 문서 · Track C(돈과 안전) 담당 · 상세 변경 이력은
+  <code>docs/journal/2026-08-18.md</code> §5 참조.
+</footer>
+
+</main>
+<a class="backtop" href="#exec-summary">맨 위로</a>
+</body>
+</html>

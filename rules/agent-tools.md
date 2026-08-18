@@ -127,6 +127,11 @@ agent → request_approval(run_id)  →  pending
 
 - Vertex AI 경유. `GOOGLE_GENAI_USE_VERTEXAI=1`, Cloud Run 서비스 계정 ADC.
 - 로컬 개발만 Gemini API 키 허용. 키를 커밋하지 않는다.
-- 세션은 `InMemorySessionService`.
+- ADK `Runner`의 세션은 여전히 `InMemorySessionService` — 매 호출마다 새로 만든다.
+  대화 이어가기는 ADK 세션이 아니라 별도 계층이다: 청구자·집행자는 호출 전
+  `agent_sessions`(Firestore, `agent/shared/memory.py`)에서 같은 `entity_id`의 과거
+  턴을 읽어와 프롬프트에 얹는다. `InMemorySessionService`를 영속형으로 바꾸는 게
+  아니다 — 재시작에도 살아남을 필요가 없다는 원칙은 그대로고, 얹히는 프롬프트
+  내용만 Firestore에서 온다. 상세는 `schema-contract.md` §9 "세션 메모리".
 - 모델 ID는 환경변수. 코드에 하드코딩하지 않는다. 해커톤 규정 버전 요건을
   마지막에 한 번 더 확인해야 하므로 한 곳에서 바꿀 수 있어야 한다.

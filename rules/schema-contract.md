@@ -380,6 +380,64 @@ PayPal은 위 4개 외에 `RETURNED`, `ONHOLD`, `BLOCKED`, `REVERSED`, `REFUNDED
 | `payload` | map | §9 |
 | `created_at` | Timestamp | |
 
+### `agent_sessions`
+
+**절대 규칙 2의 예외가 아니다 — "에이전트끼리 직접 호출 금지"와는 별개 문제다.**
+대신 architecture.md "하지 말 것"의 "Firestore SDK 직접 쓰기" 규칙에 대한 **범위가
+좁혀진 예외**다: `agent` 서비스가 이 컬렉션 하나에 한해 `agent/shared/memory.py`를
+통해 직접 읽고 쓴다. 다른 모든 Firestore 접근은 여전히 `api` 툴을 거친다.
+
+**대상은 청구자·집행자 두 에이전트뿐이다.** 둘 다 같은 실행 단위(청구 요청 · 정산
+실행)에 대해 반복 호출될 수 있어 이전 턴을 이어붙일 필요가 있다. 안전 확인 에이전트는
+승인 직전 1회성 호출이라 이어갈 대화 자체가 없다 — 이 컬렉션을 쓰지 않는다.
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `session_id` | str | `{agent_type}__{entity_id}`. 문서 ID로도 사용 |
+| `agent_type` | enum | `CLAIMANT` / `EXECUTOR` |
+| `entity_id` | str | `claimant`는 `claim_request_id`, `executor`는 `settlement_run_id` |
+| `actor_ref` | str \| None | `recipient_id` 등 — 이전 세션 요약을 찾을 때 쓰는 연결 키 |
+| `status` | enum | `ACTIVE` / `CLOSED` |
+| `turns` | list[Turn] | 아래 |
+| `summary` | str \| None | `CLOSED` 전환 시 코드가 생성 (LLM 아님, 아래 "요약" 참조) |
+| `created_at`, `updated_at` | Timestamp | |
+
+**`Turn`**
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `turn_id` | str | ULID |
+| `ts` | Timestamp | |
+| `role` | enum | `INPUT` / `OUTPUT` |
+| `content` | str | 원문 그대로 저장. `<untrusted_receipt_text>` 같은 래핑을 벗기지 않는다 |
+| `untrusted` | bool | `content`가 영수증·Slack·파일명에서 왔으면 `true` |
+| `doc_refs` | list[str] | 관련 Firestore 문서 ID (`claim_id`, `receipt_id` 등). 금액은 넣지 않는다 |
+
+**요약은 코드가 만든다, LLM이 아니다.** 절대 규칙 3("금액 계산은 LLM이 하지 않는다")의
+연장으로, 세션 요약도 자유 서술이 아니라 결정론적 템플릿으로 생성한다 —
+`"{turn_count}턴, 관련 문서 {doc_refs}, 상태 {status}"` 형태. 이유: LLM이 요약을 쓰면
+비신뢰 입력(인젝션된 영수증 문구)이 다음 세션에 "시스템이 이미 검토한 요약"이라는
+더 신뢰받는 형태로 재유입될 수 있다 — 압축이 곧 검열 우회 경로가 된다.
+
+**마이그레이션.** Firestore는 스키마리스이므로 DDL은 없다. 새 컬렉션이라 기존
+문서 백필도 없다 — VLM 검증 필드 추가 때와 같은 패턴(§ `receipts` "마이그레이션" 참조).
+배포 순서만 지키면 된다: Terraform IAM 적용(`agent` SA에 `datastore.user` 부여) →
+`agent` 배포. 순서가 바뀌면 `agent`가 `PermissionDenied`로 즉시 실패한다 — 조용한
+데이터 손실은 없다.
+
+`find_prior_session_summary`(`agent_type` + `actor_ref` + `status` 동등 필터 3개 +
+`updated_at` 정렬)는 복합 색인이 필요하다. Terraform엔 색인 리소스가 없으므로(이
+프로젝트 관례) 첫 호출 시 Firestore가 콘솔 링크가 담긴 `FailedPrecondition`을
+던진다 — 그 링크로 한 번 만들면 된다. 데모 전에 한 번 트리거해서 색인을 미리
+만들어 둔다(콜드 색인 생성은 몇 분 걸릴 수 있다).
+
+**IAM 한계.** Firestore Admin SDK(서버 SDK)는 Security Rules를 우회한다. 즉 프로젝트
+IAM(`roles/datastore.user`)은 컬렉션 단위로 좁힐 수 없다 — `agent` SA는 이 권한을 얻는
+순간 `agent_drafts`, `receipts` 등 다른 모든 컬렉션도 기술적으로 읽고 쓸 수 있게 된다.
+"agent_sessions 컬렉션만 쓴다"는 코드 컨벤션(`agent/shared/memory.py`가 유일한 창구)과
+코드 리뷰로 지키는 경계이지, IAM이 강제하는 경계가 아니다. 이 부분은 architecture.md
+"신뢰 경계" 절의 예외로 명시해 둔다.
+
 ### `audit_logs`
 
 append-only. 상태 없음. 수정·삭제하지 않는다.
@@ -809,6 +867,21 @@ def approval_amount_hash(run: SettlementRun) -> str:
 
 안전 확인 에이전트의 `risk_report`는 `audit_logs.reason`에 그대로 저장된다.
 **게이트가 아니다.** 이 리포트가 비어 있어도 승인과 송금은 코드 게이트만으로 진행된다.
+
+### 세션 메모리 (청구자·집행자)
+
+같은 `entity_id`(청구자는 `claim_request_id`, 집행자는 `settlement_run_id`)로 다시
+호출되면 이전 턴이 이어진다 — 진입점(`agent/main.py`)이 호출 전 `agent_sessions`에서
+현재 세션의 전체 턴 히스토리를 읽어 프롬프트에 포함시킨다. 같은 `actor_ref`(예:
+동일 수취인)로 종료된 과거 세션이 있으면 그 요약도 함께 포함된다.
+
+에이전트가 과거 세션의 **원문 전체**가 필요하면 `fetch_full_session` 툴을 호출한다.
+평소엔 요약만으로 충분하므로 이 툴 호출은 선택이다 — `agent-tools.md`의 "툴 하나는
+한 가지 일만" 원칙에 따라 이 컬렉션 관련 툴은 이 하나뿐이다. 턴 기록 자체는 툴이 아니라
+진입점 코드가 호출 전후로 직접 `agent_sessions`에 쓴다(`agent/shared/memory.py`) —
+LLM이 "기록을 남길지 말지"를 판단할 이유가 없는 순수 배관이라 툴로 노출하지 않는다.
+
+세부는 §2 `agent_sessions` 참조.
 
 ### 비신뢰 입력
 
