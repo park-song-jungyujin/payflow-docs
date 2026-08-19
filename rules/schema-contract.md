@@ -85,7 +85,7 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 ## 2. Firestore 컬렉션
 
-컬렉션은 8개다.
+컬렉션은 10개다.
 
 ### `recipients`
 
@@ -262,6 +262,52 @@ def verify_passed(r: Receipt, s: VerificationSignals) -> bool:
 **인프라 변경 없음.** `api` 서비스 계정은 이미 `roles/aiplatform.user`를 갖고 있다
 (`backend/infra/iam.tf`, 파싱 호출과 동일 권한) — 검증 호출에 추가 IAM이 필요 없다.
 새 Cloud Tasks 라우트가 없으므로 큐 설정도 그대로다. Terraform 변경 없음.
+
+### `receipt_dedup_keys`
+
+Slack 재전송으로 같은 영수증이 두 번 들어오는 걸 막는 유일한 장치다. 문서 ID가
+`slack_file_id`이고, 그 자체가 유일성 제약이다.
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `slack_file_id` | str | `F0123ABC`. **문서 ID로도 사용** |
+| `receipt_id` | str | 이 파일로 만들어진 영수증 |
+| `created_at` | Timestamp | |
+
+**왜 `receipts`를 쿼리해서 막지 않는가.** Firestore 트랜잭션은 **읽어서 반환된
+문서**에만 락을 건다. `slack_file_id == X` 쿼리가 0건을 돌려주면 잠글 대상이 없어서
+동시 요청 두 개가 각각 "없음"을 보고 서로 다른 `rct_{ulid}`에 쓴다. 문서 ID가 다르니
+충돌하지 않고 **둘 다 커밋된다.** 쿼리 기반 dedup은 동시 재전송에서 뚫린다.
+
+반면 **결정론적 문서 경로에 대한 `transaction.get()`은 문서가 없어도 read set에
+들어가 락이 걸린다.** 그래서 유일성은 반드시 문서 ID로 강제한다.
+
+```python
+def _txn(transaction):
+    dedup_ref = client.collection("receipt_dedup_keys").document(slack_file_id)
+    snapshot = dedup_ref.get(transaction=transaction)   # 없어도 잠긴다
+    if snapshot.exists:
+        return snapshot.get("receipt_id"), False        # 재전송
+    receipt_id = f"rct_{ULID()}"
+    transaction.set(dedup_ref, {...})                   # 읽기가 모든 쓰기보다 앞
+    transaction.set(client.collection("receipts").document(receipt_id), {...})
+    return receipt_id, True
+```
+
+**`receipts`의 문서 ID 규칙은 건드리지 않는다.** `receipts`는 계속 `receipt_id`를
+문서 ID로 쓴다 — `backend/src/settlements/export.py`가 `.document(receipt_id).get()`으로
+읽고 `backend/scripts/seed_firestore.py`·fixture 8종도 같은 규칙이라, `receipts` 문서
+ID를 `slack_file_id`로 바꾸면 이미 배포된 XLSX 출력이 깨진다. 게다가 Slack이 아닌
+경로(수동 등록·fixture)로 만든 영수증엔 `slack_file_id`가 없어 한 컬렉션에 ID 체계가
+두 개 생긴다.
+
+`receipt_id`를 dedup 문서에 함께 저장하는 이유는 재전송 경로가 **쿼리 없이 문서 직접
+조회로** 끝나기 때문이다. `receipts.slack_file_id`에 인덱스가 필요 없어지고, 자동
+인덱싱 설정에 dedup이 의존하지 않는다.
+
+dedup 문서는 계속 쌓인다. 이 규모에서는 무시해도 되고, 정리가 필요해지면 TTL 정책을
+건다 — 지우면 그 파일이 다시 인입될 수 있으므로 보존 기간은 Slack 재전송 창(수 분)이
+아니라 넉넉히 잡는다.
 
 ### `claim_requests`
 
