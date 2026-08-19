@@ -41,4 +41,5 @@
 | 2026-08-19 | Slack 인입 경로 3초 예산 재측정 — enqueue를 `guards/tasks.py`에 연결하고 `MAX_FILES_PER_EVENT=5` 상한을 넣은 뒤 재측. 전체 37 passed/3.88s, 예산 테스트 0.77s(주입 0.75s → 라우트 자체 0.02s), 파일당 400ms 최악에서 2.02s로 예산의 67%. n≥5에서 평평해져 계획서 표의 3초 초과 칸이 사라짐. 다만 예산의 enqueue 항은 여전히 sleep 가정 — 실경로는 테스트에서 monkeypatch·`CLOUD_TASKS_QUEUE` 미설정으로 한 번도 안 돌아 배포 후 로그 확인 필요 |
 | 2026-08-19 | 영수증 원본 GCS 버킷(`receipts`) 프로비저닝 — 이미 apply되어 있었지만 커밋이 빠져 있던 `infra/storage.tf`·`cloud_run.tf`·`outputs.tf`를 `main`에 반영, Track A의 raw 이미지 업로드 경로를 언블록. `GCS_RECEIPTS_BUCKET`을 `schema-contract.md` §11에 추가 |
 | 2026-08-19 | Track B 부재 대응 — `GET /settlements`·`POST /settlements/runs`·`GET /settlements/runs/{run_id}` 하드코딩 스텁(매칭·검증 없이 스키마만), `payflow-frontend`에 최소 Next.js + 승인 게이트 버튼 1개(BFF 프록시로 approve 호출). 나머지는 `TODO(B)` 주석 |
-| 2026-08-19 | `payflow-frontend` 배포 파이프라인 — backend에 frontend 전용 WIF provider·`payflow-web-deployer` SA 격리 추가, GitHub Actions는 build/typecheck/lint/test 통과해야 Cloud Run 배포. vitest 도입 및 승인 프록시 테스트 3종 작성. 4개 커밋 모두 로컬까지만, push 안 함 |
+| 2026-08-19 | `payflow-frontend` 배포 파이프라인 — backend에 frontend 전용 WIF provider·`payflow-web-deployer` SA 격리 추가, GitHub Actions는 build/typecheck/lint/test 통과해야 Cloud Run 배포. vitest 도입 및 승인 프록시 테스트 3종 작성 |
+| 2026-08-19 | 정산 배치 스텁에 실제 claims 연결 — `matching/select_claims_for_run`(TEMP, 필터링만) 신설, `POST /settlements/runs`가 후보 claims를 배치에 링크하도록 교체 |
