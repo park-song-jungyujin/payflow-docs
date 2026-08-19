@@ -1001,6 +1001,9 @@ CLOUD_TASKS_LOCATION=
 AGENT_SERVICE_URL=
 OIDC_AUDIENCE=
 
+# --- 영수증 원본 저장 ---
+GCS_RECEIPTS_BUCKET=            # 영수증 원본 이미지 + raw_text 저장 버킷. api SA만 쓰기 권한
+
 # --- 파싱 · 매칭 ---
 PARSING_CONFIDENCE_THRESHOLD=0.7
 MATCHING_DATE_WINDOW_DAYS=3
