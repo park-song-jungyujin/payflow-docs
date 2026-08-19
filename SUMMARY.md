@@ -43,3 +43,4 @@
 | 2026-08-19 | Track B 부재 대응 — `GET /settlements`·`POST /settlements/runs`·`GET /settlements/runs/{run_id}` 하드코딩 스텁(매칭·검증 없이 스키마만), `payflow-frontend`에 최소 Next.js + 승인 게이트 버튼 1개(BFF 프록시로 approve 호출). 나머지는 `TODO(B)` 주석 |
 | 2026-08-19 | `payflow-frontend` 배포 파이프라인 — backend에 frontend 전용 WIF provider·`payflow-web-deployer` SA 격리 추가, GitHub Actions는 build/typecheck/lint/test 통과해야 Cloud Run 배포. vitest 도입 및 승인 프록시 테스트 3종 작성 |
 | 2026-08-19 | 정산 배치 스텁에 실제 claims 연결 — `matching/select_claims_for_run`(TEMP, 필터링만) 신설, `POST /settlements/runs`가 후보 claims를 배치에 링크하도록 교체 |
+| 2026-08-19 | `payflow-frontend` 배포 실패 해소 — 커밋만 되고 미적용이던 `ci_web.tf` WIF/IAM 9종 apply. Cloud Run 3서비스의 `gcloud deploy` drift(client·build_config·top-level scaling)를 `ignore_changes`로 고정, `agent_datastore` IAM·`web` `API_BASE_URL` env 등 남은 변경 apply |
