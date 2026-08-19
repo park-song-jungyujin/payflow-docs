@@ -12,12 +12,12 @@
 
 ## 진행 현황
 
-<!-- 갱신: 2026-08-17 -->
+<!-- 갱신: 2026-08-19 -->
 
 | Phase | 상태 |
 |---|---|
 | **Phase 0** 계약 (D1) | ✅ **완료** — 담당 배정, 계정 3종, 스키마 계약, GCP 부트스트랩, OIDC 관통 |
-| **Phase 1** 리스크 관통 (D2~D4) | 🟡 **진행 중** — 순위 0·2 관통. 남은 것은 fixture 스텁 · 403 · Slack · 파싱 |
+| **Phase 1** 리스크 관통 (D2~D4) | 🟡 **진행 중** — 순위 0~4 관통. **남은 것은 순위 5(파싱)뿐** |
 | **Phase 2** 기능 구현 (D5~D9) | ⬜ 대기 |
 | **Phase 3** 통합 (D10~D12) | ⬜ 대기 |
 | **Phase 4** 제출물 (D13~D14) | ⬜ 대기 |
@@ -54,7 +54,7 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 
 | 레포 | 상태 |
 |---|---|
-| `payflow-backend` | 🟢 `guards/`·`payouts/` 전 경로 구현·배포 완료(승인 토큰·403 게이트·CAS·멱등성·PayPal 실호출·FX 환산·대조·감사 로그). `ingest/parsing/matching/settlements`는 `__init__.py`만 있는 빈 스캐폴딩(A·B 몫) |
+| `payflow-backend` | 🟢 `guards/`·`payouts/` 전 경로 구현·배포 완료(승인 토큰·403 게이트·CAS·멱등성·PayPal 실호출·FX 환산·대조·감사 로그). `ingest/`는 Slack 인입 경로 구현 완료(서명 검증·`receipts` dedup 트랜잭션·파싱 enqueue, 테스트 38건). `settlements/`는 XLSX 출력만. `parsing/`·`matching/`은 여전히 빈 스캐폴딩(A·B 몫) |
 | `payflow-frontend` | ⬜ 빈 상태 |
 | `payflow-agent` | 🟡 `safety/`(LlmAgent + `submit_risk_report`)·`shared/` 구현 완료, 로컬 인증 게이트까지 검증. `claimant/`·`executor/`는 501 스텁. Dockerfile/CI 없어 미배포 |
 
@@ -64,7 +64,7 @@ PayPal Sandbox, Slack 데모 워크스페이스 발급 완료
 
 | # | 항목 | 누가 |
 |---|---|---|
-| 1 | ✅ Track A 델타 3건 — 전부 확정본에 반영 완료 (8/18). 남은 것은 `agent` 핀 갱신 → `web` 타입 재생성 | A·B |
+| 1 | ✅ Track A 델타 3건 — 전부 확정본에 반영 완료 (8/18). 남은 것은 `agent` 핀 갱신 → `web` 타입 재생성. **기준 태그가 v0.5.0까지 올라갔다**(v0.4.0 인입 필드 + v0.5.0 `receipt_dedup_keys`). `receipts.currency`가 nullable이 된 것은 B의 결정론적 매칭에 영향 | A·B |
 | 2 | ✅ OpenAPI 생성 → fixture 반환 스텁 배포 (A·B 언블록) — 스텁을 넘어 `guards`·`payouts` 실제 구현까지 배포 완료 | C |
 | 3 | B가 `openapi-typescript`, A가 스키마 import로 S0 완료 판정 (미확인 — A·B 진행분 확인 필요) | A·B |
 
@@ -270,10 +270,10 @@ Slack은 실제 팀 워크스페이스가 아니라 **데모용을 새로 판다
 | 순위 | 항목 | 트랙 | 기한 | 상태 |
 |---|---|---|---|---|
 | 0 | **Cloud Tasks → 비공개 Cloud Run OIDC 호출 성공** | C | D1 | ✅ `payflow-api` + `payflow-queue`로 200 확인 |
-| 1 | api 스텁 배포 (A·B 언블록) | C | D2 | 🟡 서비스는 떴으나 **fixture 반환 엔드포인트는 아직** |
+| 1 | api 스텁 배포 (A·B 언블록) | C | D2 | ✅ 스텁을 넘어 `guards`·`payouts` 실제 구현까지 배포 |
 | 2 | PayPal 샌드박스 payout 성공 + 동일 `sender_batch_id` 재시도 무해 | C | D2 | ✅ 재전송은 `400`으로 거부 |
-| 3 | 승인 토큰 없이 `/payouts` → 403 | C | D2 | ⬜ |
-| 4 | Slack 서명검증 → enqueue → 3초 내 ack | A | D3 | ⬜ |
+| 3 | 승인 토큰 없이 `/payouts` → 403 | C | D2 | ✅ 403 게이트 구현·라이브 검증, `infra/iam-403-demo.md`에 캡처 |
+| 4 | Slack 서명검증 → enqueue → 3초 내 ack | A | D3 | ✅ `POST /slack/events`. 지연 주입 실측 최악 2.02s / 예산 3s |
 | 5 | 영수증 이미지 → 구조화 JSON + 계정과목 → Firestore | A | D4 | ⬜ |
 
 0번이 안 풀리면 A의 재촉 루프와 파싱 파이프라인이 통째로 막힌다. **D1에 뚫렸다** —
@@ -317,8 +317,8 @@ IAM 바인딩 전파 지연으로 첫 태스크가 1분간 403을 반복한 것 
 Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 
 **api**
-- [ ] Slack webhook 수신 + 서명 검증 + 3초 내 ack
-- [ ] raw 저장 → Cloud Tasks enqueue
+- [x] Slack webhook 수신 + 서명 검증 + 3초 내 ack — `POST /slack/events`. v0 서명(raw body 기준, 5분 skew), 지연 주입 실측 최악 2.02s / 예산 3s
+- [x] raw 저장 → Cloud Tasks enqueue — `receipts` 문서를 `RECEIVED`로 생성(`slack_file_id` dedup 트랜잭션) 후 `/tasks/parse-receipt` enqueue. **이미지 원본 GCS 업로드는 아직이다** — 파싱 단계로 미뤘다(`GCS_RECEIPTS_BUCKET` + `google-cloud-storage` 미도입)
 - [ ] Gemini structured output 단발 호출로 영수증 → JSON (ADK 아님)
 - [ ] **계정과목 1차 매핑** — 위 파싱 호출에 포함. 신뢰도 낮으면 `미분류`
 - [ ] PII 마스킹 — Firestore 쓰기 **전에**. 원본은 GCS에만
