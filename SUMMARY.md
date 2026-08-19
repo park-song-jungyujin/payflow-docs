@@ -44,3 +44,4 @@
 | 2026-08-19 | `payflow-frontend` 배포 파이프라인 — backend에 frontend 전용 WIF provider·`payflow-web-deployer` SA 격리 추가, GitHub Actions는 build/typecheck/lint/test 통과해야 Cloud Run 배포. vitest 도입 및 승인 프록시 테스트 3종 작성 |
 | 2026-08-19 | 정산 배치 스텁에 실제 claims 연결 — `matching/select_claims_for_run`(TEMP, 필터링만) 신설, `POST /settlements/runs`가 후보 claims를 배치에 링크하도록 교체 |
 | 2026-08-19 | `payflow-frontend` 배포 실패 해소 — 커밋만 되고 미적용이던 `ci_web.tf` WIF/IAM 9종 apply. Cloud Run 3서비스의 `gcloud deploy` drift(client·build_config·top-level scaling)를 `ignore_changes`로 고정, `agent_datastore` IAM·`web` `API_BASE_URL` env 등 남은 변경 apply |
+| 2026-08-19 | `payflow-agent` 배포 파이프라인 신설 — Dockerfile·CI 부재로 방치돼 있던 Cloud Run 서비스를 언블록. `uv sync --frozen` 기반 Dockerfile, `ci_web.tf`와 동일 패턴의 `ci_agent.tf`(WIF·`payflow-agent-deployer` SA 격리), `deploy.yml`. claimant/executor 도메인 로직(Track A/B)은 손대지 않음 |
