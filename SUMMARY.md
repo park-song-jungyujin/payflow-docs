@@ -45,3 +45,6 @@
 | 2026-08-19 | 정산 배치 스텁에 실제 claims 연결 — `matching/select_claims_for_run`(TEMP, 필터링만) 신설, `POST /settlements/runs`가 후보 claims를 배치에 링크하도록 교체 |
 | 2026-08-19 | `payflow-frontend` 배포 실패 해소 — 커밋만 되고 미적용이던 `ci_web.tf` WIF/IAM 9종 apply. Cloud Run 3서비스의 `gcloud deploy` drift(client·build_config·top-level scaling)를 `ignore_changes`로 고정, `agent_datastore` IAM·`web` `API_BASE_URL` env 등 남은 변경 apply |
 | 2026-08-19 | `payflow-agent` 배포 파이프라인 신설 — Dockerfile·CI 부재로 방치돼 있던 Cloud Run 서비스를 언블록. `uv sync --frozen` 기반 Dockerfile, `ci_web.tf`와 동일 패턴의 `ci_agent.tf`(WIF·`payflow-agent-deployer` SA 격리), `deploy.yml`. claimant/executor 도메인 로직(Track A/B)은 손대지 않음 |
+| 2026-08-20 | `docs/reports/` 다이어그램 리포트 정리 — 기존 2개 파일 가로 배치 레이아웃 수정, `cicd-infra-diagrams.html` 신설(push→CI/CD→Cloud Run 3서비스→GCP 인프라→사용자 접점을 구현 상태 색상과 함께 정리) |
+| 2026-08-20 | `payflow-backend` CI에 pytest 게이트 추가, money-safety 핵심(멱등성/승인 토큰/한도) 단위 테스트 21종 신규 |
+| 2026-08-20 | `payflow-agent` 테스트 인프라 신설(pytest 부재였음) — CI 게이트, 툴/api_client/callbacks/memory 단위 테스트, 스키마 계약 테스트, LLM 미호출 파이프라인 테스트 총 40종 |

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Payflow CI/CD·인프라 구조</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --border: #d8d8d8;
+    --muted: #666;
+    --accent-a: #2563eb;
+    --done: #059669;
+    --partial: #d97706;
+    --pending: #9ca3af;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 0.2rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1.2rem;
+    margin-bottom: 2.5rem;
+    font-size: 0.88rem;
+  }
+  .legend .item { display: flex; align-items: center; gap: 0.5rem; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  .swatch.done { background: var(--done); }
+  .swatch.partial { background: var(--partial); }
+  .swatch.pending { background: var(--pending); }
+  section {
+    margin-bottom: 3rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+  }
+  section h2 {
+    font-size: 1.2rem;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    color: white;
+    background: var(--accent-a);
+  }
+  .diagram {
+    overflow-x: auto;
+    margin: 1rem 0;
+    padding: 0.5rem;
+  }
+  .notes {
+    font-size: 0.88rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 0.8rem;
+    margin-top: 1rem;
+  }
+  .notes ul { margin: 0.3rem 0; padding-left: 1.3rem; }
+  .notes li + li { margin-top: 0.4rem; }
+  .notes code { background: #f3f3f3; padding: 0.05rem 0.3rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Payflow — CI/CD · 인프라 구조</h1>
+  <p class="subtitle">GCP 프로젝트 <code>payflow-hackathon-2026</code> / 리전 <code>asia-northeast3</code> ·
+    <code>backend/.github/workflows/deploy.yml</code>, <code>agent/.github/workflows/deploy.yml</code>,
+    <code>frontend/.github/workflows/deploy.yml</code>, <code>backend/infra/*.tf</code> 코드 확인 기준, 2026-08-20</p>
+
+  <div class="legend">
+    <div class="item"><span class="swatch done"></span>구현·배포됨 — 코드/Terraform 존재, 동작 확인</div>
+    <div class="item"><span class="swatch partial"></span>부분 구현 — 파이프라인은 있으나 일부 게이트·로직 누락</div>
+    <div class="item"><span class="swatch pending"></span>미구현 — 인프라 경로는 있으나 그 앞뒤 로직 없음</div>
+  </div>
+
+  <section>
+    <h2><span class="badge">전체 구조</span> push → 배포 → 인프라 연결 → 사용자</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    subgraph DEV["개발자 — git push origin main"]
+        D1["payflow-backend"]
+        D2["payflow-frontend"]
+        D3["payflow-agent"]
+    end
+
+    D1 --> R1["GitHub repo\npayflow-backend"]
+    D2 --> R2["GitHub repo\npayflow-frontend"]
+    D3 --> R3["GitHub repo\npayflow-agent"]
+
+    subgraph CI["GitHub Actions — 레포별 WIF(keyless), pool: github-actions"]
+        A1["deploy.yml\nprovider: payflow-backend\nSA: payflow-deployer\n(테스트 게이트 없음)"]
+        A2["deploy.yml\ncheck: build·typecheck·lint·test\n→ deploy\nprovider: payflow-frontend\nSA: payflow-web-deployer"]
+        A3["deploy.yml\nprovider: payflow-agent\nSA: payflow-agent-deployer\n(테스트 게이트 없음)"]
+    end
+
+    R1 -->|"push"| A1
+    R2 -->|"push"| A2
+    R3 -->|"push"| A3
+
+    A1 -->|"SA=payflow-api"| API["Cloud Run: payflow-api\nFastAPI · public ingress"]
+    A2 -->|"SA=payflow-web"| WEB["Cloud Run: payflow-web\nNext.js BFF · public ingress"]
+    A3 -->|"SA=payflow-agent"| AGENT["Cloud Run: payflow-agent\nADK · private\ninvoker=payflow-api SA만"]
+
+    WEB -->|"BFF 프록시 (승인 라우트만 구현)"| API
+
+    API -->|"enqueue: 파싱/송금 태스크"| TASKS[("Cloud Tasks\npayflow-queue")]
+    TASKS -->|"OIDC(api SA)\n/tasks/* 콜백 (self)"| API
+    TASKS -->|"OIDC(api SA)\ninvoker 유일 허용"| AGENT
+
+    API -->|"read/write"| FS[("Firestore Native")]
+    AGENT -.->|"agent_sessions만\n(IAM 아닌 코드 컨벤션)"| FS
+    API -->|"영수증 원본 저장"| GCS[("GCS\n{project}-receipts")]
+    API -->|"secretAccessor"| SEC[("Secret Manager\nPayPal/Slack")]
+    SEC --> PAYPAL["PayPal API"]
+    SEC --> SLACK["Slack API"]
+
+    API -.->|"Gemini 구조화 출력\n(parsing/ 빈 모듈 — 미구현)"| VERTEX_API["Vertex AI (Gemini)"]
+    AGENT -->|"ADK 세션 (claimant/executor/safety)"| VERTEX_AGENT["Vertex AI (Gemini)"]
+
+    CLAIMANT((청구자)) -->|"영수증 이미지 (Slack DM)"| API
+    API -->|"재요청·지급결과 DM"| CLAIMANT
+    EXECUTOR((집행자)) -->|"브라우저"| WEB
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#065f46;
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#92400e;
+    classDef pending fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray: 4 3;
+
+    class D1,D2,D3,R1,R2,R3,A2,API,WEB,AGENT,TASKS,FS,GCS,SEC,PAYPAL,SLACK,VERTEX_AGENT,CLAIMANT,EXECUTOR done
+    class A1,A3 partial
+    class VERTEX_API pending
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>CI/CD (전부 배포 성공 확인됨):</b> 레포 3개가 각자 <code>main</code> push 시 자기 자신만 배포한다 — 모노레포 단일 파이프라인이 아니라 완전히 독립된 워크플로 3개. 인증은 서비스 계정 키 없이 Workload Identity Federation(<code>google-github-actions/auth</code>)만 쓴다. WIF pool은 <code>github-actions</code> 하나를 공유하지만, provider와 <code>attribute_condition</code>(레포 이름 일치)으로 레포별로 완전히 격리되어 있어 다른 레포 워크플로가 서로의 배포 권한을 흉내낼 수 없다(<code>backend/infra/ci.tf</code>, <code>ci_agent.tf</code>, <code>ci_web.tf</code>).</li>
+        <li><b>부분 구현 표시(주황):</b> backend·agent의 <code>deploy.yml</code>은 checkout 직후 바로 <code>gcloud run deploy</code>로 들어간다 — 테스트·lint 게이트가 없다. frontend만 <code>build → typecheck → lint → test</code>를 통과해야 배포 job이 도는 <code>check</code> job을 갖고 있다.</li>
+        <li><b>빌드 방식:</b> Dockerfile을 별도 빌드하는 job이 없다 — <code>gcloud run deploy --source .</code>가 소스를 Cloud Build로 넘겨 이미지를 만들고 바로 배포까지 한다(Artifact Registry는 Cloud Build가 내부적으로 사용).</li>
+        <li><b>인프라 코드 위치:</b> 세 서비스의 Cloud Run·IAM·Firestore·Cloud Tasks·GCS·Secret Manager·WIF 정의가 전부 <code>backend/infra/*.tf</code> 한 곳에 있다 — 레포별 IaC가 아니라 backend 레포가 전체 인프라의 단일 진실 소스다.</li>
+        <li><b>절대 규칙 1이 그림으로 보이는 지점:</b> <code>payflow-agent</code>로 들어가는 화살표 중 Secret Manager/PayPal로 가는 경로가 없다 — <code>iam.tf</code>에서 <code>secretAccessor</code> 바인딩이 <code>payflow-api</code> SA에만 존재하기 때문이다. agent는 Firestore도 <code>agent_sessions</code> 컬렉션만 쓰도록 되어 있지만, 이건 Firestore Admin SDK가 Security Rules를 우회하는 특성상 IAM이 아니라 코드 컨벤션으로 지키는 경계라 점선으로 표시했다.</li>
+        <li><b>agent 호출 경로:</b> <code>payflow-agent</code>는 public이 아니다 — <code>run.invoker</code>가 <code>payflow-api</code> SA에만 부여되어 있고, 실제 호출은 <code>payflow-api</code>가 Cloud Tasks에 태스크를 넣으면 Cloud Tasks가 api SA 신원의 OIDC 토큰을 만들어 agent를 부르는 경로 하나뿐이다.</li>
+        <li><b>회색(미구현) 경로:</b> <code>payflow-api</code>가 영수증을 Gemini로 구조화 출력하는 경로(<code>backend/src/parsing/</code>)는 아직 빈 모듈이다 — Cloud Run·Vertex AI IAM 권한(<code>roles/aiplatform.user</code>)은 이미 붙어 있지만 그 권한을 쓰는 코드가 없다. 반면 agent 쪽 Vertex AI 호출(ADK 세션)은 세 에이전트 베이스라인이 동작하며 실제로 쓰인다.</li>
+        <li><b>사용자 접점:</b> 청구자는 Slack만 거친다(<code>payflow-api</code>의 <code>/slack/events</code> webhook — 서명 검증·ack·dedup까지 구현됨). 집행자는 브라우저로 <code>payflow-web</code>에 진입하고, web은 시크릿을 전혀 갖지 않는 BFF로서 승인 등 일부 요청만 <code>payflow-api</code>로 프록시한다(현재는 승인 라우트 1개뿐, 대시보드 UI는 미구현).</li>
+      </ul>
+    </div>
+  </section>
+</main>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+</body>
+</html>

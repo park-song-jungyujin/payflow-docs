@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Payflow 트랙별 구현 현황</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --border: #d8d8d8;
+    --muted: #666;
+    --accent-a: #2563eb;
+    --accent-b: #059669;
+    --accent-c: #d97706;
+    --done: #059669;
+    --partial: #d97706;
+    --pending: #9ca3af;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 2000px;
+    margin: 0 auto;
+  }
+  .diagram-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 1300px) {
+    .diagram-grid { grid-template-columns: 1fr; }
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 0.2rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1.2rem;
+    margin-bottom: 2.5rem;
+    font-size: 0.88rem;
+  }
+  .legend .item { display: flex; align-items: center; gap: 0.5rem; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  .swatch.done { background: var(--done); }
+  .swatch.partial { background: var(--partial); }
+  .swatch.pending { background: var(--pending); }
+  section {
+    margin-bottom: 0;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+  }
+  section h2 {
+    font-size: 0.95rem;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .badge {
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    color: white;
+  }
+  .badge-a { background: var(--accent-a); }
+  .badge-b { background: var(--accent-b); }
+  .badge-c { background: var(--accent-c); }
+  .diagram {
+    overflow-x: auto;
+    margin: 1rem 0;
+    padding: 0.5rem;
+  }
+  .notes {
+    font-size: 0.88rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 0.8rem;
+    margin-top: 1rem;
+  }
+  .notes ul { margin: 0.3rem 0; padding-left: 1.3rem; }
+  .notes code { background: #f3f3f3; padding: 0.05rem 0.3rem; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Payflow — 트랙별(A/B/C) 구현 현황 플로우차트</h1>
+  <p class="subtitle">docs/plan.md "트랙별 작업" 절 + 각 레포(<code>backend</code>, <code>agent</code>, <code>frontend</code>) 코드 확인 기준, 2026-08-20</p>
+
+  <div class="legend">
+    <div class="item"><span class="swatch done"></span>구현됨 — 코드 존재, 동작 확인</div>
+    <div class="item"><span class="swatch partial"></span>부분 구현 — 임시(TEMP) 로직 또는 뼈대만 존재</div>
+    <div class="item"><span class="swatch pending"></span>미구현</div>
+  </div>
+
+  <div class="diagram-grid">
+  <section>
+    <h2><span class="badge badge-a">Track A</span> 청구자 경험 — Slack 인입 → 청구 확정 (담당: 정유진)</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    U["직원이 Slack에\n영수증 이미지 전송"] --> W["api: webhook 수신\n서명 검증, ack\n· slack_events()"]
+    W --> R["raw 저장 (RECEIVED)\nslack_file_id dedup 트랜잭션\nCloud Tasks enqueue\n· create_receipt_if_absent()"]
+    R --> P["Gemini structured output\n영수증 → JSON"]
+    P --> ACC["계정과목 1차 매핑"]
+    ACC --> PII["PII 마스킹\n원본은 GCS에만"]
+    PII --> AG["청구자 에이전트\n파싱 결과 검토"]
+    AG --> D{판단}
+    D -->|일치| C["claims 쓰기\n업무용/개인용 분류"]
+    D -->|불일치·저신뢰| RQ["재요청 문안 작성"]
+    RQ --> DM1["재요청 DM 발송"]
+    DM1 --> U
+    C --> ST["status: PENDING"]
+    ST --> WAIT["미청구 건 대기"]
+    WAIT -->|무응답| REM["재촉 DM 1회"]
+    REM --> ST2["status: REMINDED"]
+    ST2 -->|응답| RESP["status: RESPONDED"]
+    ST2 -->|계속 무응답| EXP["status: EXPIRED"]
+    RESP --> FIN["지급 결과 통지\n'10건 중 8건 지급, 2건 사유'"]
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#065f46;
+    classDef pending fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray: 4 3;
+    class W,R done
+    class P,ACC,PII,AG,D,C,RQ,DM1,ST,WAIT,REM,ST2,RESP,EXP,FIN pending
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>구현됨:</b> <code>backend/src/ingest/routes.py</code> — <code>POST /slack/events</code> 서명 검증·ack, <code>receipts</code> RECEIVED 저장(dedup), 파싱 태스크 enqueue.</li>
+        <li><b>미구현:</b> <code>backend/src/parsing/</code>은 빈 모듈 — Gemini 파싱·계정과목 매핑·PII 마스킹 전부 없음. <code>claims</code>/<code>claim_requests</code> 쓰기 코드가 레포 전체에서 검색되지 않음 — 추적 루프(PENDING→REMINDED→EXPIRED)와 재촉 DM 미구현.</li>
+        <li><b>에이전트:</b> <code>agent/claimant/</code>에 <code>submit_receipt_review</code> 툴 뼈대는 있으나, docstring에 "실제 분류 로직은 Track A가 채운다"로 명시된 미완 baseline — 판단 로직 없음.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="badge badge-b">Track B</span> 집행자 경험 — 매칭 → 승인 카드 (담당: 박수현)</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    START["집행자가 web 진입\n정산 기간 선택 또는 자연어 입력"] --> NL{입력 방식}
+    NL -->|자연어| CONV["집행자 에이전트\nNL → SettlementFilter"]
+    NL -->|버튼| FILT["필터 직접 선택"]
+    CONV --> CONF["필터 확인 카드"]
+    FILT --> CONF
+    CONF --> EXEC["실행 트리거"]
+    EXEC --> MATCH["결정론적 매칭\n금액·날짜·가맹점명"]
+    MATCH --> VERIFY["이미지↔파싱 검증\nGemini 단발 (건당 1회)"]
+    VERIFY --> LEDGER["PayPal 원장 조회·스냅샷"]
+    LEDGER --> RUN["정산 배치 생성\nsettlement_run_id\n· create_settlement_run_route() (TEMP)"]
+    RUN --> FX["환율 승인 시점 고정"]
+    FX --> AMBIG{매칭 실패/애매 건?}
+    AMBIG -->|있음| AG2["집행자 에이전트\n이상 징후 서술"]
+    AG2 --> CARD
+    AMBIG -->|없음| CARD["요약 카드 렌더"]
+    CARD --> SAFE["안전 확인 에이전트\n리스크 리포트\n· submit_risk_report()"]
+    SAFE --> APPROVE["승인 클릭 (HITL)\n· POST() (approve/route.ts)"]
+    APPROVE --> XLSX["XLSX 출력\n세무사용, 계정과목 포함\n· build_settlement_export()"]
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#065f46;
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#92400e;
+    classDef pending fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray: 4 3;
+    class SAFE,XLSX done
+    class RUN,APPROVE partial
+    class START,NL,CONV,FILT,CONF,EXEC,MATCH,VERIFY,LEDGER,FX,AMBIG,AG2,CARD pending
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>구현됨:</b> <code>backend/src/settlements/export.py</code> XLSX 출력(계정과목 컬럼 포함). 안전 확인 에이전트(<code>agent/safety/</code>)는 리스크 리포트 툴까지 완성되어 Track C 쪽 승인 흐름에서 실제로 쓰인다.</li>
+        <li><b>부분 구현:</b> <code>POST /settlements/runs</code>는 존재하지만 코드 주석에 명시된 대로 "TEMP 버전 — 필터링만, PayPal 원장 대조·이미지 검증 없음". 승인 클릭 경로는 <code>frontend/src/app/api/settlements/runs/[runId]/approve/route.ts</code> BFF 프록시만 있고, 대시보드·요약 카드 UI는 없음(<code>frontend/src/app</code>엔 <code>page.tsx</code> 하나와 API 프록시뿐).</li>
+        <li><b>미구현:</b> <code>backend/src/matching/</code>은 빈 모듈 — 결정론적 매칭·이미지 검증·PayPal 원장 스냅샷·환율 고정 전부 없음. 자연어 → <code>SettlementFilter</code> 변환, 이상 징후 서술도 없음(<code>agent/executor/</code>는 <code>submit_settlement_analysis</code> 툴 뼈대만 존재, 판단 로직 미완).</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="badge badge-c">Track C</span> 돈과 안전 — 승인 게이트 → 송금 → 정산 완료 (담당: 송재훈)</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    APPROVE["집행자 승인 클릭"] --> TOKEN["승인 토큰 발급\nrun_id+금액 해시 바인딩, 10분 만료\n· approve_settlement_run()"]
+    TOKEN --> GATE{"토큰 검증\n코드 게이트\n· verify_and_burn_token()"}
+    GATE -->|무효/없음| REJECT["/payouts 403\n· request_payout()"]
+    GATE -->|유효| CAS["draft → approved\nFirestore CAS 전이\n· approve_settlement_run()"]
+    CAS --> LIMIT["한도 캡 검사\n배치총액·건별·월간누적\n· check_caps()"]
+    LIMIT --> CB["before_tool_callback\n한도·중복실행·감사로그\n· before_tool_callback()"]
+    CB --> QUEUE["executing 마킹\nCloud Tasks로 비동기 전달\n· enqueue_execute_payout()"]
+    QUEUE --> PAYOUT["PayPal Payouts 호출\nsender_batch_id=run_id 멱등\n· create_payout()"]
+    PAYOUT --> RECON["지급 결과 대조\n· reconcile()"]
+    RECON -->|성공| SETTLED["status: settled\n· reconcile()"]
+    RECON -->|실패/미수취| FAILED["status: failed/unclaimed\n취소 후 재발송 제안\n· reconcile()"]
+    CAS --> AUDIT["감사 로그\nts/actor/action/run_id/before/after/reason\n· record_audit_log()"]
+    APPROVE -.직전.-> SAFETY["안전 확인 에이전트\n리스크 리포트 (조언, 게이트 아님)\n· submit_risk_report()"]
+    SAFETY -.-> APPROVE
+    IAM["Terraform IAM 분리\nagent는 PayPal 시크릿 접근 불가\n· google_secret_manager_secret_iam_member.api_secret_access"] -.항상 적용.-> PAYOUT
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#065f46;
+    class APPROVE,TOKEN,GATE,REJECT,CAS,LIMIT,CB,QUEUE,PAYOUT,RECON,SETTLED,FAILED,AUDIT,SAFETY,IAM done
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>전부 구현됨</b> — 유일하게 세 트랙 중 코드·인프라가 계획서 체크리스트와 완전히 일치한다.</li>
+        <li>토큰 발급·검증: <code>backend/src/guards/routes.py</code>. 게이트·재시도·대사(reconcile): <code>backend/src/payouts/routes.py</code>, <code>reconcile.py</code>, <code>idempotency.py</code>.</li>
+        <li>안전 확인 에이전트(<code>agent/safety/submit_risk_report</code>)는 게이트가 아니라 조언자 — 리포트가 비어도 토큰 검증·한도 캡·CAS 전이는 독립적으로 동작한다.</li>
+        <li>인프라(Terraform Cloud Run 3·Firestore·Cloud Tasks·Secret Manager·IAM)와 <code>agent</code> 서비스 계정의 PayPal 시크릿 미접근 증명까지 완료.</li>
+      </ul>
+    </div>
+  </section>
+  </div>
+</main>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+</body>
+</html>
