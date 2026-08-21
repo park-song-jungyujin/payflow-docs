@@ -358,8 +358,11 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 
 **집행자 에이전트**
 - [x] 매칭 실패한 애매한 건 판단 + 이상 징후 설명 서술 (`payflow-agent/executor/`).
-      `find_duplicate_groups` 출력을 힌트로 주고 그 외 판단은 LLM이 한다. **아직
-      아무도 안 부른다** — `/agents/executor/analyze` 호출 배선(Cloud Tasks)이 없다
+      `find_duplicate_groups` 출력을 힌트로 주고 그 외 판단은 LLM이 한다.
+- [x] 호출 배선 (`src/settlements/enqueue.py`) — `POST /settlements/runs`가 배치
+      커밋 후 Cloud Tasks로 enqueue. A가 만들어둔 `enqueue_task(audience=...)`·
+      `AGENT_SERVICE_URL` 그대로 재사용. **실호출은 GCP 접근자 확인 필요**(로컬
+      샌드박스에서 Cloud Tasks→agent 라운드트립을 못 봤다)
 - [ ] **자연어 요청 → `SettlementFilter` 변환.** `settlement_run_id`가 아직 없는
       시점 호출이라 세션·draft 모델과 안 맞아 범위 분리 — `web` 입력 UX 확정 후 별도 설계
 - [ ] `미분류` 계정과목 판단
