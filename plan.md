@@ -376,14 +376,22 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 - [ ] `미분류` 계정과목 판단
 - [x] 요약 카드 문안 작성 (`summary_text`, 이상징후 서술과 같은 호출)
 
-**web**
-- [ ] 대시보드 — 정산 기간 선택, 실행 트리거 (버튼)
-- [ ] **자연어 입력창** — *"8월 외주 개발 건만 정산해줘"* → 필터 확인 카드 → 실행.
-      버튼 경로는 그대로 남긴다. 자연어는 추가 경로이지 대체 경로가 아니다
-- [ ] 요약 카드 — 정산 명세 + 위험 알림 렌더
-- [ ] 승인 카드 — HITL 진입점
-- [ ] OpenAPI 타입 생성 파이프라인, 생성 파일 커밋
-- [ ] 시크릿 없음. `NEXT_PUBLIC_`에 민감 정보 금지
+**web** — 구현 계획 확정 (`payflow-frontend/plans/2026-08-21-web-dashboard.md`), 착수 전
+- [ ] Task 0 — OpenAPI 타입 생성 파이프라인 (로컬 api 필요, 선행 작업)
+- [ ] Task 1 — 대시보드: 목록 + 실행 폼 (기간·계정과목만, `recipient_ids`는
+      제외 — `GET /recipients` 없음)
+- [ ] Task 2 — `POST /api/settlements/runs` BFF
+- [ ] Task 3 — 요약 카드(`/runs/[runId]`). **선행: 백엔드에 claim 상세 조회
+      필드 필요**(`GET /settlements/runs/{run_id}`에 `claims` 추가 — `get_claims_for_run`
+      + `_claim_summary` 재사용, 계획 문서에 스펙 있음). 다중 수취인이면
+      승인 버튼 비활성화(근본 해결은 별도 backend 과제)
+- [ ] Task 4 — 승인 카드: approve→payout을 route handler에서 체이닝해 토큰이
+      브라우저에 안 나가게 함 (기존 `approve/route.ts` 교체)
+- [ ] Task 5 — XLSX 내보내기 프록시
+- [ ] Task 6 — `EXECUTING` 상태 폴링 (5초, 새 의존성 없음)
+- [ ] **자연어 입력창** — 처리할 백엔드 엔드포인트가 없어 계속 범위 밖. 생기면
+      폼 옆에 추가(대체 아님)
+- [x] 시크릿 없음 — 현재 코드가 이미 지킴
 
 **시연 책임:** 이상 탐지 → 요약 카드 → 승인 클릭
 
