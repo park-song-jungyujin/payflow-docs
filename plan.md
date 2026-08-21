@@ -319,9 +319,9 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 **api**
 - [x] Slack webhook 수신 + 서명 검증 + 3초 내 ack — `POST /slack/events`. v0 서명(raw body 기준, 5분 skew), 지연 주입 실측 최악 2.02s / 예산 3s
 - [x] raw 저장 → Cloud Tasks enqueue — `receipts` 문서를 `RECEIVED`로 생성(`slack_file_id` dedup 트랜잭션) 후 `/tasks/parse-receipt` enqueue. **이미지 원본 GCS 업로드는 아직이다** — 파싱 단계로 미뤘다(`GCS_RECEIPTS_BUCKET` + `google-cloud-storage` 미도입)
-- [ ] Gemini structured output 단발 호출로 영수증 → JSON (ADK 아님)
-- [ ] **계정과목 1차 매핑** — 위 파싱 호출에 포함. 신뢰도 낮으면 `미분류`
-- [ ] PII 마스킹 — Firestore 쓰기 **전에**. 원본은 GCS에만
+- [x] Gemini structured output 단발 호출로 영수증 → JSON (ADK 아님)
+- [x] **계정과목 1차 매핑** — 위 파싱 호출에 포함. 신뢰도 낮으면 `미분류`
+- [x] PII 마스킹 — Firestore 쓰기 **전에**. 원본은 GCS에만
 - [x] 청구 항목 생성 및 `claims` 쓰기
 - [ ] 미청구 건 DM 발송 + 무응답 1회 재촉 (Cloud Tasks `schedule_time`)
 - [ ] `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED`
