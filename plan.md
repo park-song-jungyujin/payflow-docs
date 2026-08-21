@@ -376,22 +376,27 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 - [ ] `미분류` 계정과목 판단
 - [x] 요약 카드 문안 작성 (`summary_text`, 이상징후 서술과 같은 호출)
 
-**web** — 구현 계획 확정 (`payflow-frontend/plans/2026-08-21-web-dashboard.md`), 착수 전
-- [ ] Task 0 — OpenAPI 타입 생성 파이프라인 (로컬 api 필요, 선행 작업)
-- [ ] Task 1 — 대시보드: 목록 + 실행 폼 (기간·계정과목만, `recipient_ids`는
+**web** — 구현 완료 (`payflow-frontend/plans/2026-08-21-web-dashboard.md` Task 0~6)
+- [x] Task 0 — OpenAPI 타입 생성. 계획과 달리 GCP 접근 없이 `app.openapi()`로
+      가능했다. 다만 settlements 라우트에 `response_model`이 없어 실제 타입은
+      대부분 `unknown` — `src/types/settlement.ts`에 손으로 옮김(백엔드가
+      `response_model`을 붙이면 정리 대상, 별도 과제로 남음)
+- [x] Task 1 — 대시보드: 목록 + 실행 폼 (기간·계정과목만, `recipient_ids`는
       제외 — `GET /recipients` 없음)
-- [ ] Task 2 — `POST /api/settlements/runs` BFF
-- [ ] Task 3 — 요약 카드(`/runs/[runId]`). **선행: 백엔드에 claim 상세 조회
-      필드 필요**(`GET /settlements/runs/{run_id}`에 `claims` 추가 — `get_claims_for_run`
-      + `_claim_summary` 재사용, 계획 문서에 스펙 있음). 다중 수취인이면
-      승인 버튼 비활성화(근본 해결은 별도 backend 과제)
-- [ ] Task 4 — 승인 카드: approve→payout을 route handler에서 체이닝해 토큰이
-      브라우저에 안 나가게 함 (기존 `approve/route.ts` 교체)
-- [ ] Task 5 — XLSX 내보내기 프록시
-- [ ] Task 6 — `EXECUTING` 상태 폴링 (5초, 새 의존성 없음)
+- [x] Task 2 — `POST /api/settlements/runs` BFF
+- [x] Task 3 — 요약 카드(`/runs/[runId]`). 선행 백엔드 변경(`claims` 필드)도
+      같이 완료. 다중 수취인이면 승인 버튼 비활성화(근본 해결은 별도 backend 과제)
+- [x] Task 4 — 승인 카드: approve→payout을 route handler에서 체이닝해 토큰이
+      브라우저에 안 나가게 함. approve 200인데 토큰이 없으면 502로 명시적 실패
+- [x] Task 5 — XLSX 내보내기 프록시
+- [x] Task 6 — `EXECUTING` 상태 폴링 (5초, `router.refresh()`, 새 의존성 없음)
 - [ ] **자연어 입력창** — 처리할 백엔드 엔드포인트가 없어 계속 범위 밖. 생기면
       폼 옆에 추가(대체 아님)
 - [x] 시크릿 없음 — 현재 코드가 이미 지킴
+
+**검증:** 가짜 백엔드 + Playwright(헤드리스 Chromium)로 실제 화면 7개 시나리오
+구동 확인(목록·DRAFT·중복청구·다중수취인·EXECUTING·404·폼 제출), 콘솔 에러 없음.
+typecheck·lint·vitest 전부 통과. 실제 배포된 api 대상 통합은 아직 미확인.
 
 **시연 책임:** 이상 탐지 → 요약 카드 → 승인 클릭
 
