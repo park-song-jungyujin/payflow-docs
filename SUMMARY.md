@@ -48,3 +48,4 @@
 | 2026-08-20 | `docs/reports/` 다이어그램 리포트 정리 — 기존 2개 파일 가로 배치 레이아웃 수정, `cicd-infra-diagrams.html` 신설(push→CI/CD→Cloud Run 3서비스→GCP 인프라→사용자 접점을 구현 상태 색상과 함께 정리) |
 | 2026-08-20 | `payflow-backend` CI에 pytest 게이트 추가, money-safety 핵심(멱등성/승인 토큰/한도) 단위 테스트 21종 신규 |
 | 2026-08-20 | `payflow-agent` 테스트 인프라 신설(pytest 부재였음) — CI 게이트, 툴/api_client/callbacks/memory 단위 테스트, 스키마 계약 테스트, LLM 미호출 파이프라인 테스트 총 40종 |
+| 2026-08-21 | 청구 항목(`claims`) 생성 구현 — 파싱이 `PARSED`로 확정한 영수증에서 청구를 만들어 `CONFIRMED`로 넣는 마지막 고리를 연결, 영수증 한 장이 송금까지 가는 E2E 완성. `receipts` 갱신·`claims` 생성을 단일 트랜잭션으로 결합, `is_business`는 `DEFAULT_IS_BUSINESS = True` 상수로 고정(청구자 에이전트 부재). `claims.DRAFT`의 계약상 정의 부재 발견, `plan.md` 미결·체크박스 갱신 |
