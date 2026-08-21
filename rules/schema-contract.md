@@ -976,6 +976,7 @@ Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에�
 | 라우트 | 트랙 | 핸들러 위치 |
 |---|---|---|
 | `POST /tasks/parse-receipt` | A | `api/src/parsing/` |
+| `POST /tasks/apply-claimant-draft` | A | `api/src/ingest/` |
 | `POST /tasks/remind` | A | `api/src/ingest/` |
 | `POST /tasks/execute-payout` | C | `api/src/payouts/` |
 | `POST /tasks/reconcile` | C | `api/src/payouts/` |

@@ -323,6 +323,12 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 - [x] **계정과목 1차 매핑** — 위 파싱 호출에 포함. 신뢰도 낮으면 `미분류`
 - [x] PII 마스킹 — Firestore 쓰기 **전에**. 원본은 GCS에만
 - [x] 청구 항목 생성 및 `claims` 쓰기
+- [x] 청구자 에이전트 draft 반영 — `POST /tasks/apply-claimant-draft`(`api/src/ingest/`).
+      `agent_drafts`(`"CLAIMANT:{receipt_id}"`)를 읽어 `needs_requery=true`면
+      영수증 `PARSED → NEEDS_REQUERY` · claim `CONFIRMED → DRAFT` 강등 ·
+      `claim_requests` 신규(`PENDING`)를 한 트랜잭션으로 반영. `IN_RUN`·`SETTLED`
+      claim은 건드리지 않고 감사 로그만 남김. draft 읽기는 B의
+      `store.get_agent_draft` 재사용
 - [ ] 미청구 건 DM 발송 + 무응답 1회 재촉 (Cloud Tasks `schedule_time`)
 - [ ] `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED`
 - [ ] 청구자 지급 결과 통지 — "10건 중 8건 지급, 2건 사유"
