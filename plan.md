@@ -340,13 +340,15 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 매칭부터 승인 카드까지. **web 전체를 소유한다.**
 
 **api**
-- [ ] 결정론적 매칭 — 금액 · 날짜 윈도우 · 가맹점명. **LLM 아님**
-- [ ] `POST /settlements/runs`에서 후보 claim의 receipt마다 이미지↔파싱 결과 검증 —
-      파싱과 별개인 Gemini 단발 호출(이미지당 1회, ADK 아님), 요청 핸들러 안에서
-      동기 실행(새 Cloud Tasks 라우트 아님). 판정만 반환하고 금액은 고치지 않는다.
-      통과 시 `verified_at` 캐싱(재검증 안 함), 실패 시 `status = VERIFICATION_FAILED` +
-      `claim_requests.reason = VERIFICATION_FAILED`로 후보에서 제외. 계약:
-      schema-contract.md "검증" 절
+- [x] 결정론적 매칭 — 중복 청구 판정(`src/matching/duplicates.py`). 금액 완전일치 ·
+      날짜윈도우 · 정규화 가맹점명, union-find로 클러스터링. **LLM 아님.** 후보를 배치에서
+      빼지 않는 advisory 판정 — 서술 주체(집행자 vs 안전 확인)는 ③/④ 배선에서 결정
+- [x] `POST /settlements/runs`에서 후보 claim의 receipt마다 이미지↔파싱 결과 검증
+      (`src/settlements/verification.py`) — 파싱과 별개인 Gemini 단발 호출(`google-genai`,
+      A의 `parsing/gemini.py`와 같은 패턴), 요청 핸들러 안에서 동기 실행. 판정만 반환하고
+      금액은 고치지 않는다. `verified_at` 캐싱, 실패 시 `VERIFICATION_FAILED` 전이 +
+      `claim_requests` 생성. **실호출은 GCP 접근자가 `scripts/test_verification_call.py`로
+      스모크 테스트 필요**
 - [ ] PayPal 결제 원장 조회 및 스냅샷
 - [ ] 정산 배치 생성 (`settlement_run_id`), `SettlementFilter` 적용
 - [ ] 금액 합산·인당 분배 — 코드가 한다
