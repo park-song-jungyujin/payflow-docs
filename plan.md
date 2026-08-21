@@ -349,9 +349,12 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
       금액은 고치지 않는다. `verified_at` 캐싱, 실패 시 `VERIFICATION_FAILED` 전이 +
       `claim_requests` 생성. **실호출은 GCP 접근자가 `scripts/test_verification_call.py`로
       스모크 테스트 필요**
-- [ ] PayPal 결제 원장 조회 및 스냅샷
-- [ ] 정산 배치 생성 (`settlement_run_id`), `SettlementFilter` 적용
-- [ ] 금액 합산·인당 분배 — 코드가 한다
+- ~~PayPal 결제 원장 조회 및 스냅샷~~ — 죽은 항목. 원래 구상(PayPal 원장 ↔ 청구
+      대조)은 스키마 진화 과정에서 폐기됐다. 실제 매칭은 claim들끼리의 중복
+      탐지(위 결정론적 매칭)로 대체됨
+- [x] 정산 배치 생성 (`settlement_run_id`), `SettlementFilter` 적용 — `routes.py`가 함
+- [x] 금액 합산·인당 분배 — 배치 생성 시점은 잠정치(0), 승인 시점에 C의
+      `guards/routes.py._lock_fx_and_total`이 실제 계산
 - [ ] 환율 **승인 시점 고정** — 정산 배치에 박아둔다. 승인 토큰이 금액 해시에 바인딩되므로
       승인 후 환율이 변하면 토큰이 깨진다
 - [x] XLSX 출력 (세무사 전달용, **계정과목 컬럼 포함**)
@@ -363,6 +366,11 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
       커밋 후 Cloud Tasks로 enqueue. A가 만들어둔 `enqueue_task(audience=...)`·
       `AGENT_SERVICE_URL` 그대로 재사용. **실호출은 GCP 접근자 확인 필요**(로컬
       샌드박스에서 Cloud Tasks→agent 라운드트립을 못 봤다)
+- [x] `agent_drafts.EXECUTOR` 읽기 — `GET /settlements/runs/{run_id}`의
+      `executor_analysis` 필드 (`store.get_agent_draft` 신설). `task_id`를
+      `executor_draft_task_id`("EXECUTOR:{run_id}")로 네임스페이스해 안전 확인
+      에이전트와의 잠재적 문서 충돌을 막음. `safety_report` 필드는 C의 배선·
+      task_id 컨벤션 미정이라 보류
 - [ ] **자연어 요청 → `SettlementFilter` 변환.** `settlement_run_id`가 아직 없는
       시점 호출이라 세션·draft 모델과 안 맞아 범위 분리 — `web` 입력 UX 확정 후 별도 설계
 - [ ] `미분류` 계정과목 판단
