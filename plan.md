@@ -343,6 +343,10 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
       CAS로 `PENDING`·`REMINDED`에서만 전이한다 — `EXPIRED`는 되살리지 않는다.
       **실제 Slack 워크스페이스에서는 미검증**
 - [ ] 청구자 지급 결과 통지 — "10건 중 8건 지급, 2건 사유"
+- [ ] **멀티테넌시 — Slack `team_id` → `org_id` 조회 + lazy recipient 등록.**
+      `find_recipient_by_slack_user`에 `org_id` 필터 추가, 미등록 `(team_id,
+      slack_user_id)`는 초대 절차 없이 최초 메시지 시점에 `recipients` 자동
+      생성. C가 초안 작성(Google 로그인·Slack OAuth 설치 작업의 연장), A 확인 필요
 
 **청구자 에이전트**
 - [x] 파싱 결과가 영수증과 맞는지 검토, 어긋나면 재요청 판단 — `/agents/claimant/review`
@@ -415,6 +419,13 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
 - [ ] **자연어 입력창** — 처리할 백엔드 엔드포인트가 없어 계속 범위 밖. 생기면
       폼 옆에 추가(대체 아님)
 - [x] 시크릿 없음 — 현재 코드가 이미 지킴
+- [ ] **Google 로그인 + 멀티테넌시.** `approved_by`가 `demo_approver` 하드코딩(
+      신원 스푸핑 가능)이던 걸 실제 로그인으로 교체. `web`은 Google client ID만
+      갖고, 토큰 교환은 `api`(`POST /auth/google/callback`)가 한다. 로그인한
+      집행자가 `GET /auth/slack/install`로 자기 기관의 **기존** Slack
+      워크스페이스에 앱을 설치(OAuth) — Slack은 새 워크스페이스 생성 API가
+      없으므로 "설치"가 맞는 모델. C가 A/B 영역까지 걸쳐 초안 작성, 팀 확인 전
+      임시로 진행
 
 **검증:** 가짜 백엔드 + Playwright(헤드리스 Chromium)로 실제 화면 7개 시나리오
 구동 확인(목록·DRAFT·중복청구·다중수취인·EXECUTING·404·폼 제출), 콘솔 에러 없음.

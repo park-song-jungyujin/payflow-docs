@@ -22,14 +22,17 @@
 ## 서비스별 책임
 
 ### `web`
-- 관리자 대시보드 화면, 승인 카드 UI.
+- 관리자 대시보드 화면, 승인 카드 UI, 집행자 Google 로그인.
 - 서버 액션/route handler는 `api`로 넘기는 얇은 프록시만 담당한다.
 - 비즈니스 로직을 두지 않는다. 금액 계산, 상태 전이, 이상 탐지 전부 `api` 소관.
 - 어떤 시크릿도 갖지 않는다. `NEXT_PUBLIC_` 접두사가 붙은 값에 민감 정보 금지.
+  Google OAuth **client ID**는 공개 값이라 예외지만, client **secret**은 절대
+  두지 않는다 — 토큰 교환은 `api`가 대신한다(§"org 스코핑과 로그인" 참조).
 
 ### `api`
 - 유일하게 PayPal을 호출하는 서비스.
 - Slack webhook 수신 및 서명 검증.
+- Google OAuth 토큰 교환, 세션 발급/검증.
 - 승인 토큰 발급/검증.
 - 영수증 이미지 → 구조화 JSON (Gemini structured output 단발 호출, ADK 아님).
 - 영수증 이미지 ↔ 파싱 결과 검증. **정산 실행 시점**, 파싱과 별개인 Gemini 단발
@@ -92,6 +95,28 @@ claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED
 예약된 태스크는 깨어나서 현재 status를 읽고 분기한다. 중복 실행돼도 안전해야 한다.
 
 ADK 세션은 `InMemorySessionService`. 재시작 후 살아남을 필요가 없다.
+
+## org 스코핑과 로그인
+
+여러 기관이 격리된 상태로 같은 배포를 쓴다. `org_id`는 두 경로로만 결정된다 —
+그 외 경로(요청 바디, 쿼리 파라미터)로 들어온 org_id는 신뢰하지 않는다.
+
+- **집행자(웹) 쪽**: Google 로그인 세션에서 나온다. `web`은 Google에서 받은
+  authorization code를 `api`의 `POST /auth/google/callback`으로 그대로 넘기고,
+  `api`가 코드 교환·세션 발급까지 전부 한다(`GOOGLE_CLIENT_SECRET`은 `api`만
+  가진다). `web`은 발급된 세션 토큰을 httpOnly 쿠키로 저장할 뿐, 그 안의 org_id를
+  직접 읽거나 조작하지 않는다.
+- **청구자(Slack) 쪽**: 들어온 이벤트의 `team_id`에서 나온다. Slack signing
+  secret은 워크스페이스가 아니라 **앱 하나**에 붙으므로(distributed OAuth app
+  모델) 서명 검증 자체는 지금과 똑같이 전역 시크릿 하나로 한다. 서명을 통과한
+  뒤 `team_id`로 `slack_workspaces`를 조회해 `org_id`와 그 워크스페이스의
+  bot token을 얻는다. 등록되지 않은 `team_id`는 401.
+- 모든 Firestore 쿼리 필터링은 **`api` 계층에서 끝난다.** `agent`와 `web`은
+  org_id로 직접 쿼리를 만들지 않는다 — `agent`는 `api` 툴 호출 결과가 이미
+  스코핑돼 있고, `web`은 Firestore를 아예 안 만진다.
+- Slack "설치"는 새 워크스페이스를 만드는 게 아니라 **기관이 가진 기존
+  워크스페이스**에 OAuth로 앱을 추가하는 것이다. Slack에는 서드파티가 워크스페이스
+  자체를 생성하는 API가 없다.
 
 ## 하지 말 것
 
