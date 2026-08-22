@@ -329,8 +329,17 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
       `claim_requests` 신규(`PENDING`)를 한 트랜잭션으로 반영. `IN_RUN`·`SETTLED`
       claim은 건드리지 않고 감사 로그만 남김. draft 읽기는 B의
       `store.get_agent_draft` 재사용
-- [ ] 미청구 건 DM 발송 + 무응답 1회 재촉 (Cloud Tasks `schedule_time`)
-- [ ] `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED`
+- [x] 미청구 건 DM 발송 + 무응답 1회 재촉 (Cloud Tasks `schedule_time`) —
+      `POST /tasks/remind` 하나가 상태 기계를 돌며 자기를 재예약한다
+      (`payouts/reconcile`과 같은 패턴, 계약 §10에 라우트 추가 없음). DM 본문은
+      코드가 짓지 않고 `agent_drafts`의 `requery_message`를 그대로 보낸다 —
+      문안이 없으면 발송하지 않고 `CLAIM_REQUEST_NO_MESSAGE` 감사 로그만.
+      `receipts.slack_channel_id`·`slack_message_ts`가 둘 다 있으면 스레드 답글,
+      아니면 `recipients.slack_user_id`로 DM 폴백
+- [ ] `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED` —
+      `PENDING → REMINDED → EXPIRED`는 구현·fixture 05 종단 검증 완료.
+      **`RESPONDED`는 `/slack/interactions`가 없어 도달 불가** — 지금은 모든
+      요청이 만료된다. 다음 작업
 - [ ] 청구자 지급 결과 통지 — "10건 중 8건 지급, 2건 사유"
 - [ ] **멀티테넌시 — Slack `team_id` → `org_id` 조회 + lazy recipient 등록.**
       `find_recipient_by_slack_user`에 `org_id` 필터 추가, 미등록 `(team_id,
