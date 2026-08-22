@@ -45,7 +45,7 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | `api/src/schemas/` | **공유** — 변경 시 `schema:` 커밋 + 태그 + 전원 통보 |
 | `api/src/ingest/`, `api/src/parsing/` | A |
 | `api/src/matching/`, `api/src/settlements/` | B |
-| `api/src/guards/`, `api/src/payouts/`, `api/infra/` | C |
+| `api/src/guards/`, `api/src/payouts/`, `api/src/auth/`, `api/infra/` | C |
 | `api/tests/fixtures/` | **공유** — 추가만, 수정 금지 |
 | `agent/claimant/` | A |
 | `agent/executor/` | B |
@@ -85,17 +85,18 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 ## 2. Firestore 컬렉션
 
-컬렉션은 10개다.
+컬렉션은 13개다.
 
 ### `recipients`
 
 영수증을 올리고 정산을 받는 사람. Slack user ID와 PayPal 이메일을 잇는 유일한 지점이다.
 집행자는 여기 없다 — 집행자는 송금 대상이 아니라 대시보드 인증 주체이고,
-`audit_logs.actor` 문자열로 충분하다.
+`executors` 컬렉션과 `audit_logs.actor`로 식별된다.
 
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `recipient_id` | str | `rcp_{ulid}` |
+| `org_id` | str | 소속 기관. `slack_workspaces.team_id`로 역참조해 얻는다 |
 | `slack_user_id` | str | `U0123ABC`. DM 발송에 쓴다 |
 | `paypal_email` | str | 송금 수취 주소 |
 | `display_name` | str | |
@@ -115,6 +116,7 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `receipt_id` | str | `rct_{ulid}` |
+| `org_id` | str | |
 | `recipient_id` | str | |
 | `image_gcs_uri` | str \| None | 원본 이미지 |
 | `raw_text_gcs_uri` | str \| None | 파싱 원문. 에이전트의 비신뢰 입력이 여기서 온다 |
@@ -314,6 +316,7 @@ dedup 문서는 계속 쌓인다. 이 규모에서는 무시해도 되고, 정�
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `claim_request_id` | str | `crq_{ulid}` |
+| `org_id` | str | |
 | `recipient_id` | str | |
 | `receipt_id` | str \| None | 영수증에 매이지 않는 사유가 있다. 아래 |
 | `reason` | enum | **필수.** 왜 보내는지. 아래 |
@@ -355,6 +358,7 @@ fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처�
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `claim_id` | str | `clm_{ulid}` |
+| `org_id` | str | |
 | `recipient_id`, `receipt_id` | str | |
 | `amount_minor` | int | |
 | `currency` | str | |
@@ -379,6 +383,7 @@ fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처�
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `settlement_run_id` | str | `run_{yymmdd}_{ULID 앞 12자}`. §3 |
+| `org_id` | str | |
 | `filter` | SettlementFilter | §6 |
 | `base_currency` | str | 캡 검사와 총액 표시의 기준통화 |
 | `total_amount_minor` | int | 기준통화 환산 총액 |
@@ -388,7 +393,7 @@ fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처�
 | `approval_token_hash` | str \| None | 토큰 원문은 저장하지 않는다 |
 | `approval_token_expires_at` | Timestamp \| None | 발급 시각 + `APPROVAL_TOKEN_TTL_SECONDS` |
 | `approval_token_used_at` | Timestamp \| None | **소각 표시.** non-null이면 재사용 거부 |
-| `approved_by` | str \| None | 집행자 식별자 |
+| `approved_by` | str \| None | `executors.email`. 세션에서 서버가 채운다 — 요청 바디값을 신뢰하지 않는다 |
 | `approved_at` | Timestamp \| None | |
 | `retry_seq` | int | 재발송 회차. 최초 0 |
 | `status` | enum | `DRAFT` / `APPROVED` / `EXECUTING` / `SETTLED` / `FAILED` |
@@ -399,6 +404,7 @@ fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처�
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `sender_item_id` | str | §3 |
+| `org_id` | str | |
 | `settlement_run_id`, `recipient_id` | str | |
 | `receiver_email` | str | 송금 시점의 이메일 스냅샷 |
 | `amount_minor` | int | 원통화 금액 |
@@ -423,6 +429,7 @@ PayPal은 위 4개 외에 `RETURNED`, `ONHOLD`, `BLOCKED`, `REVERSED`, `REFUNDED
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `draft_id` | str | `drf_{ulid}` |
+| `org_id` | str | |
 | `agent` | enum | `CLAIMANT` / `EXECUTOR` / `SAFETY` |
 | `target_type` | enum | `RECEIPT` / `SETTLEMENT_RUN` |
 | `target_id` | str | |
@@ -444,6 +451,7 @@ PayPal은 위 4개 외에 `RETURNED`, `ONHOLD`, `BLOCKED`, `REVERSED`, `REFUNDED
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `session_id` | str | `{agent_type}__{entity_id}`. 문서 ID로도 사용 |
+| `org_id` | str | |
 | `agent_type` | enum | `CLAIMANT` / `EXECUTOR` |
 | `entity_id` | str | `claimant`는 `claim_request_id`, `executor`는 `settlement_run_id` |
 | `actor_ref` | str \| None | `recipient_id` 등 — 이전 세션 요약을 찾을 때 쓰는 연결 키 |
@@ -495,7 +503,8 @@ append-only. 상태 없음. 수정·삭제하지 않는다.
 | 필드 | 타입 | 비고 |
 |---|---|---|
 | `ts` | Timestamp | |
-| `actor` | str | 사람 식별자 / 에이전트 이름 / 서비스 이름 |
+| `org_id` | str \| None | 기관 무관 시스템 액션(예: 미설치 워크스페이스 이벤트 거부)은 `None` |
+| `actor` | str | 사람 식별자 / 에이전트 이름 / 서비스 이름. `actor_type=HUMAN`이면 `executors.email` |
 | `actor_type` | enum | `HUMAN` / `AGENT` / `SYSTEM` |
 | `action` | str | `RUN_CREATED`, `RUN_APPROVED`, `PAYOUT_ENQUEUED`, `PAYOUT_REJECTED` 등 |
 | `run_id` | str \| None | |
@@ -503,6 +512,59 @@ append-only. 상태 없음. 수정·삭제하지 않는다.
 | `reason` | str \| None | 안전 확인 에이전트 출력 원문 |
 
 `reason`에 들어가는 값은 **PII 마스킹 이후**다. 원문 영수증 텍스트를 여기 흘리지 않는다.
+
+`actor_type=HUMAN`인 로그의 `actor`는 **요청 바디가 아니라 검증된 세션에서** 서버가
+채운다. 클라이언트가 보낸 신원 문자열을 그대로 믿지 않는다 — `settlement_runs.approved_by`와
+같은 원칙.
+
+### `orgs`
+
+기관 하나. 로그인·Slack 설치·데이터 전부가 여기로 귀속된다.
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `org_id` | str | `org_{ulid}`. **문서 ID로도 사용** |
+| `name` | str | |
+| `created_by` | str | 최초 가입한 `executors.executor_id` |
+| `created_at`, `updated_at` | Timestamp | |
+
+### `executors`
+
+대시보드에 Google 로그인하는 집행자. `recipients`(송금 대상)와는 다른 사람이다 —
+집행자는 돈을 받지 않고 정산을 승인한다.
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `executor_id` | str | `exe_{ulid}` |
+| `org_id` | str | |
+| `email` | str | Google 계정 이메일. `org_id` 안에서 유일 |
+| `google_sub` | str | Google OAuth `sub` 클레임. 재로그인 시 조회 키 |
+| `name` | str | Google 프로필 표시명 |
+| `status` | enum | `ACTIVE` / `DISABLED` |
+| `created_at`, `updated_at` | Timestamp | |
+
+### `slack_workspaces`
+
+기관이 자신의 **기존** Slack 워크스페이스에 이 앱을 설치하면 생기는 레코드다.
+Slack은 새 워크스페이스를 만들어주는 API가 없으므로, 여기서 "설치"는 항상 기존
+워크스페이스에 OAuth로 앱을 추가하는 것을 뜻한다.
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `team_id` | str | Slack 워크스페이스 ID (`T0123ABC`). **문서 ID로도 사용** |
+| `org_id` | str | 1:1 매핑 |
+| `bot_token` | str | 설치 시 발급된 bot token. 워크스페이스별로 다르다 |
+| `bot_user_id` | str | |
+| `scope` | str | 부여된 OAuth 스코프, 콤마 구분 |
+| `installed_at` | Timestamp | |
+| `installed_by` | str | 설치한 `executors.executor_id` |
+| `updated_at` | Timestamp | |
+
+**signing secret은 여기 없다.** Slack OAuth v2 distributed app 모델에서 signing
+secret은 워크스페이스가 아니라 **앱 하나**에 붙는다 — 모든 워크스페이스의 요청을
+같은 `SLACK_SIGNING_SECRET` 하나로 검증한다. 워크스페이스별로 갈리는 건 bot
+token뿐이다. `team_id`는 매 Slack 이벤트 payload에 실려 오므로, 서명 검증을
+통과한 뒤 이 컬렉션에서 `org_id`와 `bot_token`을 조회하는 순서다.
 
 ---
 
@@ -965,11 +1027,23 @@ LLM이 "기록을 남길지 말지"를 판단할 이유가 없는 순수 배관�
 | `POST /payouts` | C | `api/src/payouts/` |
 | `POST /payouts/{run_id}/retry` | C | `api/src/payouts/` |
 | `POST /webhooks/paypal` | C | `api/src/payouts/` |
+| `POST /auth/google/callback` | C | `api/src/auth/` |
+| `GET  /auth/slack/install` | C | `api/src/auth/` |
+| `POST /auth/slack/callback` | C | `api/src/auth/` |
+| `POST /auth/logout` | C | `api/src/auth/` |
 
 Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에서 **따로** 받는다.
 버튼 응답은 `/slack/interactions`로 온다.
 
-`POST /slack/events`는 서명 검증 후 **3초 이내에 ack**하고 처리는 큐로 넘긴다.
+`POST /slack/events`는 서명 검증 후 **3초 이내에 ack**하고 처리는 큐로 넘긴다. 서명은
+앱 전체에 하나뿐인 `SLACK_SIGNING_SECRET`으로 검증하고, 그 다음 payload의 `team_id`로
+`slack_workspaces`에서 `org_id`와 그 워크스페이스의 `bot_token`을 조회한다. `team_id`가
+`slack_workspaces`에 없으면(미설치 워크스페이스) 401로 거부한다.
+
+`POST /auth/google/callback`은 `web`이 받은 Google authorization code를 대신 교환하는
+창구다 — `GOOGLE_CLIENT_SECRET`이 `web`에 들어가면 안 되므로 이 라우트가 유일한 교환
+지점이다. `GET /auth/slack/install`·`POST /auth/slack/callback`은 세션이 필요하다
+(로그인한 집행자만 자기 기관에 워크스페이스를 설치할 수 있다).
 
 ### Cloud Tasks 전용 (OIDC 필수, 공개 금지)
 
@@ -1023,10 +1097,21 @@ MAX_AMOUNT_PER_BATCH_MINOR=
 MAX_AMOUNT_MONTHLY_MINOR=
 APPROVAL_TOKEN_TTL_SECONDS=600
 
+# --- Google OAuth (집행자 로그인) ---
+GOOGLE_OAUTH_REDIRECT_URI=
+# GOOGLE_CLIENT_ID           # public. web의 NEXT_PUBLIC_GOOGLE_CLIENT_ID와 같은 값
+# GOOGLE_CLIENT_SECRET       # Secret Manager 경유. api만 가진다
+
+# --- Slack OAuth (기관별 워크스페이스 설치) ---
+SLACK_OAUTH_REDIRECT_URI=
+# SLACK_APP_CLIENT_ID        # public
+# SLACK_APP_CLIENT_SECRET    # Secret Manager 경유. api만 가진다
+
 # --- 시크릿: Secret Manager 경유. .env에 값을 넣지 않는다 ---
 # PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET
-# SLACK_SIGNING_SECRET
-# SLACK_BOT_TOKEN
+# SLACK_SIGNING_SECRET        # 앱 전체 하나. 워크스페이스별로 갈리지 않는다
+# GOOGLE_CLIENT_SECRET
+# SLACK_APP_CLIENT_SECRET
 ```
 
 `PAYPAL_ENV`를 명시적으로 둔 것은 live 오발사 방지 목적이다. 기본값에 기대지 않는다.
@@ -1035,6 +1120,12 @@ APPROVAL_TOKEN_TTL_SECONDS=600
 분리하고 그 사실을 주석으로 남긴다.
 
 `web`에는 시크릿이 없다. `NEXT_PUBLIC_` 접두사에 민감 정보를 넣지 않는다.
+`NEXT_PUBLIC_GOOGLE_CLIENT_ID`는 예외가 아니다 — OAuth client ID는 공개 값이다
+(브라우저 리다이렉트 URL에 그대로 노출된다). 비밀은 client **secret** 쪽이고, 그건
+`api`에만 있다.
+
+**`SLACK_BOT_TOKEN` 전역 env var는 더 이상 없다.** bot token은 워크스페이스(기관)별로
+다르므로 `slack_workspaces.bot_token`에서 `team_id`로 조회한다.
 
 ---
 
