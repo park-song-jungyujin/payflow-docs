@@ -336,17 +336,24 @@ Slack에서 영수증이 들어와 청구 항목이 확정되기까지 전부.
       문안이 없으면 발송하지 않고 `CLAIM_REQUEST_NO_MESSAGE` 감사 로그만.
       `receipts.slack_channel_id`·`slack_message_ts`가 둘 다 있으면 스레드 답글,
       아니면 `recipients.slack_user_id`로 DM 폴백
-- [ ] `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED` —
-      `PENDING → REMINDED → EXPIRED`는 구현·fixture 05 종단 검증 완료.
-      **`RESPONDED`는 `/slack/interactions`가 없어 도달 불가** — 지금은 모든
-      요청이 만료된다. 다음 작업
+- [x] `claim_request.status: PENDING → REMINDED → RESPONDED | EXPIRED` —
+      `RESPONDED`는 `POST /slack/interactions`(계약 §10)가 채운다. 재요청 DM에
+      버튼을 붙이고(`slack_client.requery_blocks`, value에 `claim_request_id`),
+      상호작용은 form-encoded raw body 서명 검증 후 `mark_responded`의 트랜잭션
+      CAS로 `PENDING`·`REMINDED`에서만 전이한다 — `EXPIRED`는 되살리지 않는다.
+      **실제 Slack 워크스페이스에서는 미검증**
 - [ ] 청구자 지급 결과 통지 — "10건 중 8건 지급, 2건 사유"
 
 **청구자 에이전트**
-- [ ] 파싱 결과가 영수증과 맞는지 검토, 어긋나면 재요청 판단
-- [ ] 재요청 문안 작성 (파싱 실패 / 내용 불일치 / 미청구 추궁)
-- [ ] 업무용·개인용 분류 판단
-- [ ] 비신뢰 입력 격리 — `<untrusted_receipt_text>` 블록
+- [x] 파싱 결과가 영수증과 맞는지 검토, 어긋나면 재요청 판단 — `/agents/claimant/review`
+      501 스텁 제거(`payflow-agent` `1950cd6`). 판정은 **보수적**이다: `needs_requery=true`는
+      (a)금액 없음 (b)날짜 없음 (c)원문과 명백한 모순 셋뿐이고 애매하면 통과 —
+      잘못 걸면 claim이 정산 후보에서 빠지고 방어선이 없다
+- [x] 재요청 문안 작성 (파싱 실패 / 내용 불일치) — 미청구 추궁(`MISSING_CLAIM`)·
+      지급 결과 통지는 다른 트리거 몫이라 아직
+- [x] 업무용·개인용 분류 판단 — `is_business`. 다만 **아무도 읽지 않는다**(승격 경로 부재)
+- [x] 비신뢰 입력 격리 — `<untrusted_receipt_text>` 블록. 원문은 `raw_text_gcs_uri`로
+      받아 에이전트가 GCS에서 직접 읽는다(§9) — 큐 본문에 원문을 싣지 않는다
 
 **시연 책임:** 추적 루프 (DM → 재촉 → 버튼 응답)
 
