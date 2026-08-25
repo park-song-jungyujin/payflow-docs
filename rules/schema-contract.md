@@ -49,7 +49,6 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | `api/tests/fixtures/` | **공유** — 추가만, 수정 금지 |
 | `agent/claimant/` | A |
 | `agent/executor/` | B |
-| `agent/safety/` | C |
 | `web/` 전체 | B |
 
 `api/src/payouts/`와 `api/src/guards/`는 main 직푸시 금지. 브랜치 + 리뷰 1회.
@@ -430,7 +429,7 @@ PayPal은 위 4개 외에 `RETURNED`, `ONHOLD`, `BLOCKED`, `REVERSED`, `REFUNDED
 |---|---|---|
 | `draft_id` | str | `drf_{ulid}` |
 | `org_id` | str | |
-| `agent` | enum | `CLAIMANT` / `EXECUTOR` / `SAFETY` |
+| `agent` | enum | `CLAIMANT` / `EXECUTOR` |
 | `target_type` | enum | `RECEIPT` / `SETTLEMENT_RUN` |
 | `target_id` | str | |
 | `task_id` | str | 멱등성 키. 같은 Cloud Tasks 재시도는 덮어쓴다 |
@@ -445,8 +444,7 @@ PayPal은 위 4개 외에 `RETURNED`, `ONHOLD`, `BLOCKED`, `REVERSED`, `REFUNDED
 통해 직접 읽고 쓴다. 다른 모든 Firestore 접근은 여전히 `api` 툴을 거친다.
 
 **대상은 청구자·집행자 두 에이전트뿐이다.** 둘 다 같은 실행 단위(청구 요청 · 정산
-실행)에 대해 반복 호출될 수 있어 이전 턴을 이어붙일 필요가 있다. 안전 확인 에이전트는
-승인 직전 1회성 호출이라 이어갈 대화 자체가 없다 — 이 컬렉션을 쓰지 않는다.
+실행)에 대해 반복 호출될 수 있어 이전 턴을 이어붙일 필요가 있다.
 
 | 필드 | 타입 | 비고 |
 |---|---|---|
@@ -509,7 +507,7 @@ append-only. 상태 없음. 수정·삭제하지 않는다.
 | `action` | str | `RUN_CREATED`, `RUN_APPROVED`, `PAYOUT_ENQUEUED`, `PAYOUT_REJECTED` 등 |
 | `run_id` | str \| None | |
 | `before`, `after` | map \| None | 전이 전후 상태 |
-| `reason` | str \| None | 안전 확인 에이전트 출력 원문 |
+| `reason` | str \| None | 거부·실패 사유 등 부가 설명 |
 
 `reason`에 들어가는 값은 **PII 마스킹 이후**다. 원문 영수증 텍스트를 여기 흘리지 않는다.
 
@@ -845,9 +843,6 @@ POST /settlements/runs
   └ claims CONFIRMED → IN_RUN (CAS 트랜잭션, 살아남은 후보만)
   └ run 생성, status = DRAFT, 총액은 잠정치
 
-POST /agents/safety/report        (Cloud Tasks, 승인 직전)
-  └ agent_drafts에 risk_report 기록
-
 POST /settlements/runs/{run_id}/approve
   └ 환율 조회 → fx_rates, fx_locked_at 고정
   └ total_amount_minor 재계산
@@ -955,7 +950,6 @@ def approval_amount_hash(run: SettlementRun) -> str:
 |---|---|---|
 | `POST /agents/claimant/review` | A | `agent/claimant/` |
 | `POST /agents/executor/analyze` | B | `agent/executor/` |
-| `POST /agents/safety/report` | C | `agent/safety/` |
 
 **응답 본문은 의미가 없다.** 결과를 `agent_drafts`에 쓰고 `200`만 돌려준다.
 `api`가 draft를 읽어간다.
@@ -966,7 +960,6 @@ def approval_amount_hash(run: SettlementRun) -> str:
 |---|---|---|
 | 청구자 | `receipt_id`, 파싱 JSON, `raw_text_gcs_uri` | `needs_requery: bool`, `requery_message: str`, `is_business: bool`, `reason: str` |
 | 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str` |
-| 안전 확인 | `settlement_run` 스냅샷 | `risk_report: str` |
 
 세부 필드는 각 담당이 자기 에이전트 것만 채운다. 서로 부르지 않으므로 에이전트 간 계약은
 없다. `payload` 최상위 키만 위 표대로 맞춘다.
@@ -976,9 +969,6 @@ def approval_amount_hash(run: SettlementRun) -> str:
 후보에서 코드가 미리 걸러내고 집행자 에이전트에게 넘기지 않는다 — "검증된 텍스트
 데이터만 취합하는" 경계는 프롬프트가 아니라 후보 목록을 만드는 코드(`api/src/matching/`
 또는 `api/src/settlements/`, B)가 지킨다.
-
-안전 확인 에이전트의 `risk_report`는 `audit_logs.reason`에 그대로 저장된다.
-**게이트가 아니다.** 이 리포트가 비어 있어도 승인과 송금은 코드 게이트만으로 진행된다.
 
 ### 세션 메모리 (청구자·집행자)
 
@@ -1138,7 +1128,7 @@ SLACK_OAUTH_REDIRECT_URI=
 |---|---|---|---|
 | 1 | 정상 영수증, 매칭 성공. **항목 하나는 USD** | 골든 패스 + `fx_rates` 환산 경로 | B |
 | 2 | 파싱 실패 (흐릿한 사진) | 재요청 문안, 1단계 결정론적 폴백 | A |
-| 3 | 중복 청구 의심 | 안전 확인 에이전트 이상 서술 | B |
+| 3 | 중복 청구 의심 | 결정론적 중복 탐지(`find_duplicate_groups`) + 집행자 이상 서술 | B |
 | 4 | 신호는 깨끗한데 `llm_confidence` 낮음 | 2단계 임계값 → `UNCLASSIFIED` → 집행자 재판단 | B |
 | 5 | 미청구 방치 → 재촉 → 무응답 만료 | 추적 루프 전체 상태 전이 | A |
 | 6 | 프롬프트 인젝션 시도 영수증 텍스트 | `injection_suspected`, 비신뢰 입력 격리 | A |
