@@ -96,3 +96,4 @@
 | 2026-08-25 | `verified=False` recipient 송금 차단 TODO 검토 — 검증을 True로 바꾸는 경로 자체가 없어(관리자 UI 전무) 지금 막으면 모든 송금이 영구 차단됨을 확인. 해커톤 스코프상 구현 보류, TODO 주석만 실제 상태에 맞게 정정 |
 | 2026-08-25 | `agent_sessions` 메모리 계층 보완점 7건 재검증·수정 — 임베딩 실패 로깅·`close_session` 멱등성·`append_turn`/`close_session` 턴 배열 race(`ArrayUnion`)는 main 직접 push, org_id 필수화·executor CLOSED 재개 가드는 `fix/agent-sessions-hardening` 브랜치(미머지). turns 무한 증가·정렬 키 타입 혼재는 재현 불가/저위험으로 non-issue 종결. claimant_review 성공 신호 부재(신규 발견, 미착수)는 별도 항목으로 기록 |
 | 2026-08-25 | architecture-diagrams.html 리포트를 코드베이스 최신 상태(safety agent 배선, claims CAS 전환)로 갱신 |
+| 2026-08-26 | 거래일자 미검출 receipt 재요청을 청구자 에이전트(LLM) 확률적 판정에서 `parsing/pipeline.py` 코드 결정론적 규칙으로 전환 — `apply_claimant_verdict` 직접 호출로 needs_requery 확정, 재촬영 DM 즉시 발송 보장. 큐 인입 전 필터링은 3초 ack 제약상 TODO로 보류 |
