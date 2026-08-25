@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3단계 에이전트 메모리 구조 제안 검토</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #5a5a5a;
+    --border: #d8d8d8;
+    --border-strong: #b8b8b8;
+    --accent: #2563eb;
+    --warn-bg: #fff7e6;
+    --warn-border: #e0a72d;
+    --danger-bg: #fdecec;
+    --danger-border: #d33;
+    --rec-bg: #eef5ff;
+    --rec-border: #2563eb;
+    --zebra: #fafafa;
+    --code-bg: #f2f2f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 5rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, sans-serif;
+    line-height: 1.65;
+  }
+  main { max-width: 1150px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; border-bottom: 2px solid var(--border-strong); padding-bottom: .4rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.6rem; color: var(--text); }
+  p { max-width: 78ch; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+  nav.toc {
+    border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.5rem;
+    background: var(--zebra); max-width: 480px;
+  }
+  nav.toc ol { margin: .3rem 0 0; padding-left: 1.2rem; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0 1.5rem; font-size: .92rem; }
+  caption { text-align: left; font-weight: 600; margin-bottom: .4rem; }
+  th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+  thead th { background: #f0f0f0; }
+  tbody tr:nth-child(even) { background: var(--zebra); }
+  code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 4px; font-size: .88em; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: .9rem 1.1rem; overflow-x: auto; font-size: .84rem; line-height: 1.5;
+  }
+  .callout {
+    border-left: 4px solid; border-radius: 4px; padding: .8rem 1rem; margin: 1.2rem 0;
+    max-width: 78ch; font-size: .93rem;
+  }
+  .callout .label { font-weight: 700; display: block; margin-bottom: .25rem; }
+  .callout.warning { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout.danger { background: var(--danger-bg); border-color: var(--danger-border); }
+  .callout.recommendation { background: var(--rec-bg); border-color: var(--rec-border); }
+  .callout.decision { background: #f0fbf3; border-color: #2f9e51; }
+  .diagram-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: #fff; }
+  svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 700; padding: .1rem .45rem; border-radius: 4px; margin-right: .3rem; }
+  .tag.fact { background: #eaeaea; }
+  .tag.finding { background: #fdecec; color: #a11; }
+  .tag.decision { background: #dff5e4; color: #1e6b34; }
+  .sev { font-weight: 700; }
+  .sev.critical { color: #a11; }
+  .sev.high { color: #b5720c; }
+  .sev.medium { color: #5a5a5a; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .82rem; }
+  a.backtop { position: fixed; bottom: 1.2rem; right: 1.2rem; background: var(--accent); color: #fff;
+    text-decoration: none; padding: .5rem .8rem; border-radius: 999px; font-size: .8rem; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>3단계(글로벌/팀/세션) 에이전트 메모리 구조 제안 검토</h1>
+  <p class="subtitle">기존 단일 계층 세션 메모리(<code>agent_sessions</code>)를 글로벌·팀·세션 3단계로 확장하자는 제안에 대한 구현 전 검토 — 결론: 구현 보류</p>
+  <p class="meta">검토일 2026-08-22 · Track C(송재훈) · 대상: <code>agent/main.py</code>, <code>agent/shared/memory.py</code>, <code>agent/shared/api_client.py</code>, <code>docs/rules/schema-contract.md</code> §2</p>
+</header>
+
+<div class="callout warning">
+  <span class="label">복원 안내</span>
+  이 문서는 2026-08-22 세션에서 작성이 언급되었으나 커밋되지 않아 저장소에서 유실된 상태로
+  확인됐다(<code>docs/journal/2026-08-22.md</code> §4, <code>docs/SUMMARY.md</code> 2026-08-22행에만
+  기록 존재). 당시 세션의 원문 자체는 복구할 수 없어, 저널 기록과 현재 코드
+  (<code>agent/main.py</code>, <code>agent/shared/memory.py</code>)를 대조해 <strong>내용을
+  재구성</strong>했다. 세부 문구는 원본과 다를 수 있으나 발견 사항 3가지와 결론(구현 보류)은
+  저널 원문 그대로다.
+</div>
+<div class="callout decision">
+  <span class="label">2026-08-25 재검증 — §7 최종 계획 추가</span>
+  §3(untrusted 재주입)·§4(IAM 컬렉션 미제한)는 코드 변경 없이 <strong>그대로 재현됨</strong>을
+  확인했다. §5(org_id)는 상황이 바뀌었다 — <code>schema-contract.md</code>는 이제
+  <code>agent_sessions.org_id</code>를 명시하지만 <code>agent/shared/memory.py</code>·
+  backend enqueue 코드 어디에도 구현되지 않은 <strong>문서-코드 드리프트</strong> 상태다.
+  현재 코드베이스 기준 최종 계획을 <a href="#plan">§7</a>에 추가했다.
+</div>
+
+<section id="exec-summary">
+<h2>Executive Summary</h2>
+<ul>
+  <li><span class="tag decision">결론</span> 3단계 메모리 구조는 <strong>구현하지 않았다 — 검토만 수행</strong>. 아래 발견 사항 3가지, 특히 치명적 결함 1건을 해소하기 전에는 계층을 확장할 근거가 없다고 판단했다.</li>
+  <li><span class="tag finding">치명적</span> 기존 단일 계층(세션) 메모리에도 이미 결함이 있다 — <code>agent/main.py</code>가 과거 턴을 프롬프트에 재주입할 때 <code>Turn.untrusted</code> 플래그가 저장만 되고 렌더링 시 강제되지 않는다. 계층을 더 늘리기 전에 먼저 고쳐야 할 선행 결함이다.</li>
+  <li><span class="tag finding">높음</span> 제안된 글로벌/팀 계층은 <code>agent_sessions</code> 외 새 컬렉션 직접 쓰기를 전제하는데, <code>agent</code> SA의 <code>datastore.user</code>는 컬렉션 단위로 못 좁혀진다. 새 컬렉션마다 "IAM이 아니라 코드로만 지키는 경계"가 하나씩 늘어난다.</li>
+  <li><span class="tag finding">중간</span> 검토 시점 기준 Firestore 문서에 <code>org_id</code> 필드가 없어, "팀" 계층을 스코핑할 축 자체가 존재하지 않았다 — 팀 계층은 선행조건 미충족.</li>
+  <li>같은 날 이어진 멀티테넌시 작업(§5 참고)으로 <code>org_id</code> 선행조건은 이후 해소됐으나, 치명적 결함(§3)과 IAM 경계 문제(§4)는 이 문서 작성 시점 기준 <strong>미해결</strong>이다.</li>
+</ul>
+</section>
+
+<nav class="toc" aria-label="목차">
+  <strong>목차</strong>
+  <ol>
+    <li><a href="#background">배경 — 제안 내용</a></li>
+    <li><a href="#findings">발견 사항 요약</a></li>
+    <li><a href="#critical">치명적 결함 — untrusted 태그 미강제</a></li>
+    <li><a href="#iam">IAM 경계 확장 문제</a></li>
+    <li><a href="#orgid">org_id 선행조건 미충족</a></li>
+    <li><a href="#recommendation">권고(2026-08-22 당시)</a></li>
+    <li><a href="#reverify">2026-08-25 재검증</a></li>
+    <li><a href="#plan">최종 계획 — 현재 코드베이스 기준</a></li>
+  </ol>
+</nav>
+
+<section id="background">
+<h2>1. 배경 — 제안 내용</h2>
+<p>
+현재 <code>agent_sessions</code>(<a href="agent-session-memory.html">2026-08-18 도입</a>)은
+청구자·집행자 에이전트 각각에 대해 <strong>세션 하나</strong>(같은 실행 단위의 반복 호출)만
+이어붙이는 단일 계층 구조다. 제안은 여기에 두 계층을 추가하는 것이었다:
+</p>
+<table>
+<caption>제안된 3단계 구조</caption>
+<thead><tr><th>계층</th><th>범위</th><th>목적(제안)</th><th>이 검토에서의 판단</th></tr></thead>
+<tbody>
+<tr><td><strong>글로벌</strong></td><td>전체 조직 공통</td><td>반복적으로 재발하는 패턴(예: 특정 가맹점 분류 규칙)을 세션 경계 없이 공유</td><td>새 컬렉션 필요 — §4</td></tr>
+<tr><td><strong>팀</strong></td><td>조직(org) 단위</td><td>같은 조직 내 여러 실행 단위가 학습을 공유</td><td>스코핑 축 없음 — §5</td></tr>
+<tr><td><strong>세션</strong></td><td>실행 단위 1개</td><td>기존 <code>agent_sessions</code> 그대로</td><td>기존 결함 존재 — §3</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="findings">
+<h2>2. 발견 사항 요약</h2>
+<table>
+<caption>검토 결과 3가지</caption>
+<thead><tr><th>심각도</th><th>대상</th><th>내용</th><th>영향</th></tr></thead>
+<tbody>
+<tr><td><span class="sev critical">치명적</span></td><td>세션 계층(기존)</td><td><code>main.py</code>의 <code>prior_turns</code> 재주입이 <code>untrusted</code> 플래그를 태그로 렌더링하지 않음</td><td>과거 영수증 원문에 심어진 인젝션 문구가 "이전 턴 기록"이라는 이름으로 비신뢰 표시 없이 재유입될 수 있음</td></tr>
+<tr><td><span class="sev high">높음</span></td><td>글로벌/팀 계층(제안)</td><td>새 컬렉션 직접 쓰기 시 <code>agent</code> SA의 <code>datastore.user</code>가 컬렉션 단위로 못 좁혀짐</td><td>"IAM이 아니라 코드 한 파일로 지키는 경계"가 컬렉션마다 하나씩 늘어남 — 감사 대상 확대</td></tr>
+<tr><td><span class="sev medium">중간</span></td><td>팀 계층(제안)</td><td>검토 시점 Firestore 문서에 <code>org_id</code> 없음</td><td>팀 단위로 무엇을 묶을지 정의 자체가 불가능 — 선행조건 미충족</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="critical">
+<h2>3. 치명적 결함 — untrusted 태그 미강제</h2>
+<p>
+<code>agent/shared/memory.py</code>의 <code>Turn</code> 모델은 턴마다 <code>untrusted: bool</code>을
+저장한다. 그런데 <code>agent/main.py</code>가 과거 턴을 프롬프트에 다시 넣을 때는 이 플래그를
+쓰지 않는다:
+</p>
+<pre>prior_turns = (
+    "\n".join(f"[{t.role}] {t.content}" for t in session.turns)
+    if session.turns
+    else "(이전 턴 없음 — 이번이 이 영수증의 첫 검토입니다)"
+)
+...
+prompt = (
+    f"receipt_id: {receipt_id!r}\n"
+    f"task_id: {task_id!r}\n\n"
+    f"이전 턴 기록:\n{prior_turns}\n\n"          # ← t.untrusted 무시, 태그 없음
+    "&lt;untrusted_receipt_text&gt;\n"
+    f"{untrusted_block}\n"                        # ← 이번 턴은 명시적으로 래핑됨
+    "&lt;/untrusted_receipt_text&gt;\n\n"
+    ...
+)</pre>
+<p>
+<strong>이번 호출</strong>의 영수증 원문(<code>untrusted_block</code>)은
+<code>&lt;untrusted_receipt_text&gt;</code>로 감싸 시스템 지시와 명확히 분리하지만,
+<strong>과거 턴</strong>은 <code>t.content</code>를 그대로 문자열 join한 "이전 턴 기록"
+블록에 들어간다. 과거 턴 중 <code>untrusted=True</code>였던 것(즉 이전 영수증 원문)이
+있어도 이 블록에서는 신뢰된 시스템 텍스트와 구분되지 않는다.
+</p>
+<div class="callout danger">
+  <span class="label">위험 시나리오</span>
+  같은 <code>receipt_id</code>에 재시도가 발생해 <code>get_or_create_session</code>이 기존
+  세션을 이어받는 경우, 1차 시도 때 저장된 영수증 원문(인젝션 문구 포함 가능)이 2차 호출의
+  "이전 턴 기록"으로 태그 없이 재주입된다. 인젝션 방어가 <strong>최초 호출에서만</strong>
+  작동하고 재호출부터는 우회되는 구조다.
+</div>
+<p>
+<code>agent/shared/memory.py</code>의 <code>append_turn</code> 독스트링은 "content는
+<code>&lt;untrusted_*&gt;</code> 같은 래핑을 벗기지 않고 원문 그대로 저장한다"고 명시하지만,
+이는 <strong>저장</strong> 시 래핑을 유지한다는 뜻이지 <strong>재주입 시</strong> 래핑을
+복원한다는 보장이 아니다 — 실제로 <code>main.py</code> 쪽에서 그 복원이 빠져 있다.
+</p>
+</section>
+
+<section id="iam">
+<h2>4. IAM 경계 확장 문제</h2>
+<p>
+<code>agent/shared/memory.py</code> 상단 주석은 이미 이 한계를 인정하고 있다:
+</p>
+<pre>"""schema-contract.md §2 `agent_sessions`, architecture.md "agent" 예외 — ...
+`agent` 서비스가 Firestore에 직접 쓰는 유일한 지점이다. 이 모듈이 `agent_sessions`
+외 다른 컬렉션을 건드리면 안 된다 — 그 경계는 IAM이 아니라 이 파일 하나로 지킨다
+(§2 "IAM 한계")."""</pre>
+<p>
+Firestore Admin SDK는 Security Rules를 우회하므로 <code>agent</code> SA에 부여된
+<code>roles/datastore.user</code>는 컬렉션 단위 제한이 불가능하다. 현재는 "예외 컬렉션이
+<code>agent_sessions</code> 하나뿐"이라는 사실과 <code>shared/memory.py</code>라는 단일
+진입점으로 그 경계를 코드 리뷰만으로 지키고 있다. 글로벌·팀 계층을 위해 컬렉션을
+1~2개 더 추가하면, <strong>같은 방식(코드 컨벤션)으로 지켜야 할 경계가 그만큼 늘어난다</strong> —
+계층마다 "이 컬렉션만 건드린다"를 다시 보증해야 하고, IAM은 여전히 그 보증에 관여하지 않는다.
+</p>
+</section>
+
+<section id="orgid">
+<h2>5. org_id 선행조건 미충족(검토 시점)</h2>
+<p>
+검토 시점(2026-08-22 오전, 멀티테넌시 설계 착수 전)의 <code>docs/rules/schema-contract.md</code>는
+<code>org_id</code> 필드를 어느 컬렉션에도 정의하지 않은 상태였다. "팀"을 무엇으로 정의할지
+(조직? Slack 워크스페이스? 실행자 계정?) 스코핑 축이 스키마에 없어, 팀 계층을 만들어도
+무엇을 기준으로 묶을지 결정할 수 없었다.
+</p>
+<div class="callout decision">
+  <span class="label">참고 — 같은 날 해소된 선행조건</span>
+  이 검토 직후 이어진 멀티테넌시 작업(<code>docs/journal/2026-08-22.md</code> §5·§6)에서
+  8개 기존 컬렉션에 <code>org_id</code>를 추가하고 <code>orgs</code>·<code>executors</code>
+  등 4개 컬렉션이 신설됐다. 따라서 "팀" 계층의 스코핑 축 자체는 현재 존재하지만,
+  <strong>이 문서가 다루는 §3·§4의 결함은 그것과 별개로 여전히 미해결</strong>이다.
+</div>
+</section>
+
+<section id="recommendation">
+<h2>6. 권고(2026-08-22 당시)</h2>
+<ol>
+<li><strong>§3의 untrusted 재주입 결함을 먼저 고친다.</strong> <code>prior_turns</code> 조립 시
+<code>t.untrusted</code>가 true인 턴은 <code>&lt;untrusted_receipt_text&gt;</code>와 동일한
+방식으로 개별 래핑해야 한다. 계층을 늘리기 전에 기존 단일 계층부터 안전해야 한다.</li>
+<li><strong>글로벌/팀 계층은 새 컬렉션 대신 기존 <code>agent_sessions</code> 확장을 먼저 검토한다.</strong>
+컬렉션을 늘릴수록 §4의 코드-only 경계가 늘어난다 — <code>entity_id</code> 네임스페이스를
+<code>org_id</code>나 글로벌 키로 확장하는 방식이 새 컬렉션보다 IAM 경계 확장을 피할 수 있는지
+먼저 검토.</li>
+<li><strong>지금 시점에 3단계 구조를 구현하지 않는다.</strong> 해커톤 마감(2026-09-01)까지
+남은 시간 대비, 재발 패턴 공유 같은 부가 기능보다 §3 결함 수정과 기존 파이프라인 완결이 우선.</li>
+</ol>
+</section>
+
+<section id="reverify">
+<h2>7. 2026-08-25 재검증</h2>
+<p>
+문서 복원 요청을 계기로 §3·§4·§5 세 발견 사항이 지금 코드베이스에도 적용되는지
+다시 확인했다.
+</p>
+<table>
+<caption>재검증 결과</caption>
+<thead><tr><th>발견 사항</th><th>2026-08-22 상태</th><th>2026-08-25 상태</th><th>근거</th></tr></thead>
+<tbody>
+<tr>
+  <td>§3 untrusted 재주입</td>
+  <td>치명적 결함</td>
+  <td><strong>동일 — 미해결</strong></td>
+  <td><code>agent/main.py</code> <code>claimant_review</code>(132-137행)·<code>executor_analyze</code>(196-201행) 둘 다 <code>t.untrusted</code>를 무시하고 <code>t.content</code>를 그대로 join</td>
+</tr>
+<tr>
+  <td>§4 IAM 컬렉션 미제한</td>
+  <td>구조적 위험</td>
+  <td><strong>동일 — 미해결</strong></td>
+  <td><code>agent/shared/memory.py</code> 상단 주석, <code>schema-contract.md</code> §2 "IAM 한계" 문구 변경 없음</td>
+</tr>
+<tr>
+  <td>§5 org_id 선행조건</td>
+  <td>스코핑 축 자체가 스키마에 없음</td>
+  <td><strong>변화 — 문서·코드 드리프트</strong></td>
+  <td><code>schema-contract.md</code> 454행이 <code>agent_sessions.org_id</code>를 명시하지만, <code>AgentSession</code> 모델(<code>memory.py</code>)에 필드 없음. <code>backend/src/parsing/enqueue.py</code>·<code>settlements/enqueue.py</code> 어느 쪽도 agent 호출 payload에 <code>org_id</code>를 싣지 않음. <code>find_prior_session_summary</code>도 org_id로 필터링하지 않음</td>
+</tr>
+</tbody>
+</table>
+<div class="callout danger">
+  <span class="label">새로 드러난 위험 — org_id 미스코핑으로 인한 조직 간 세션 요약 누출</span>
+  <code>find_prior_session_summary</code>는 <code>actor_ref</code>(예: <code>recipient_id</code>)
+  하나만으로 과거 닫힌 세션을 조회한다. 멀티테넌시 도입 이후 여러 조직이 같은 서비스를
+  쓰는 지금, 서로 다른 조직의 청구자가 우연히 같은 <code>actor_ref</code> 값을 갖게 되면
+  (예: 이메일을 식별자로 재사용하는 경우) <strong>다른 조직의 세션 요약이 조회될 수 있다</strong>.
+  §5에서 "팀 계층은 아직 선행조건 미충족이라 안전하다"고 판단했던 근거가, 멀티테넌시가
+  실제로 배포된 지금은 더 이상 유효하지 않다 — 지금은 "위험이 없음"이 아니라
+  "위험이 있지만 아직 안 막혀 있음" 상태다.
+</div>
+</section>
+
+<section id="plan">
+<h2>8. 최종 계획 — 현재 코드베이스 기준</h2>
+<p>
+새 컬렉션(글로벌/팀 계층)을 만들지 않고 기존 <code>agent_sessions</code> 하나로
+세션 계층의 결함을 고치고 org_id 스코핑(사실상 팀 계층 역할)까지 마무리하는 안이다.
+§4의 IAM 경계를 넓히지 않는 것을 최우선으로 삼았다.
+</p>
+<table>
+<caption>Phase 1 — untrusted 재주입 수정 (필수, 치명적)</caption>
+<thead><tr><th>파일</th><th>변경</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>agent/main.py</code></td>
+  <td>
+    <code>claimant_review</code>·<code>executor_analyze</code> 두 곳에 중복된
+    <code>prior_turns</code> 조립 로직을 헬퍼 함수 하나로 통합하고, 턴별
+    <code>untrusted</code> 플래그에 따라 개별 래핑한다:
+<pre>def _render_prior_turns(turns: list[Turn]) -> str:
+    if not turns:
+        return "(이전 턴 없음)"
+    rendered = []
+    for t in turns:
+        if t.untrusted:
+            rendered.append(
+                f"[{t.role}] &lt;untrusted_receipt_text&gt;\n{t.content}\n&lt;/untrusted_receipt_text&gt;"
+            )
+        else:
+            rendered.append(f"[{t.role}] {t.content}")
+    return "\n".join(rendered)</pre>
+    두 라우트의 <code>prior_turns = ...</code> 블록을 이 호출로 교체.
+  </td>
+</tr>
+</tbody>
+</table>
+<table>
+<caption>Phase 2 — org_id 스코핑 실제 연결 (문서-코드 드리프트 해소)</caption>
+<thead><tr><th>파일</th><th>변경</th></tr></thead>
+<tbody>
+<tr><td><code>agent/shared/memory.py</code></td><td><code>AgentSession</code>에 <code>org_id: str</code> 추가. <code>get_or_create_session</code>에 <code>org_id</code> 파라미터 추가(신규 세션 생성 시에만 반영 — 기존 세션은 조회로 이어받으므로 재기입 불필요). <code>find_prior_session_summary</code>의 필터 체인에 <code>FieldFilter("org_id", "==", org_id)</code> 추가 — <strong>이 한 줄이 §7에서 지적한 조직 간 누출을 막는다</strong>.</td></tr>
+<tr><td><code>backend/src/parsing/enqueue.py</code></td><td><code>enqueue_claimant_review</code>의 <code>payload</code>에 <code>"org_id": receipt.get("org_id")</code> 추가 — 이미 조회돼 있는 <code>receipt</code> dict에서 꺼내기만 하면 됨, 새 조회 불필요.</td></tr>
+<tr><td><code>backend/src/settlements/enqueue.py</code></td><td><code>enqueue_executor_analyze</code>에 <code>org_id</code> 인자 추가, 호출부(정산 실행 라우트)에서 <code>settlement_run</code>의 <code>org_id</code>를 그대로 전달.</td></tr>
+<tr><td><code>agent/main.py</code></td><td>두 라우트 모두 <code>body.get("org_id")</code>를 읽어 <code>get_or_create_session(..., org_id=org_id)</code>·<code>find_prior_session_summary(..., org_id=org_id)</code>에 전달.</td></tr>
+</tbody>
+</table>
+<div class="callout recommendation">
+  <span class="label">글로벌 계층은 이번 마일스톤에서 계속 보류</span>
+  Phase 1·2를 마치면 <code>agent_sessions</code> 하나로 <strong>세션(entity_id) + 팀(org_id)</strong>
+  2단계가 실질적으로 갖춰진다 — 새 컬렉션이 필요 없다. 조직 간 공유 패턴(가맹점 분류
+  규칙 등) 같은 "글로벌" 계층은 정의상 org_id 경계를 넘는 조회/쓰기가 필요해 §4의
+  IAM 미제한 위험을 그대로 재현한다. 마감(2026-09-01)까지 남은 시간과 심사 배점
+  (Innovation/Utility 40%가 "Agent가 실제로 행동한 증거"에 걸려 있음)을 고려하면
+  지금 투자할 항목이 아니라고 판단, 계속 범위 밖으로 둔다.
+</div>
+<p>
+Phase 1은 기존 코드 두 곳의 중복 로직을 헬퍼로 통합하면서 고치는 것이라 순증가
+코드량이 적고, Phase 2는 스키마 문서가 이미 요구 중인 필드를 실제로 채우는 것이라
+"새 기능 추가"가 아니라 "이미 선언된 계약 이행"에 가깝다 — 둘 다 해커톤 코딩 태도
+(요청된 것만, 투기적 추상화 금지)에 부합한다.
+</p>
+</section>
+
+<footer>
+  Payflow 내부 문서 · Track C(돈과 안전) 담당 · 검토 근거는
+  <code>docs/journal/2026-08-22.md</code> §4·미결 표 참조. 이 문서는 2026-08-25에
+  유실이 확인되어 저널 기록과 현재 코드를 대조해 재구성했고, 같은 날 현재
+  코드베이스 기준으로 재검증(§7)·최종 계획(§8)을 추가했다.
+</footer>
+
+</main>
+<a class="backtop" href="#exec-summary">맨 위로</a>
+</body>
+</html>
