@@ -336,7 +336,7 @@ Firestore 없이도 로직을 확인하려고 페이크 클라이언트로 스�
 <ul>
   <li><span style="text-decoration:line-through">schema: 커밋 + 태그 + 전원 통보 (§13 변경 절차)</span> — 완료(멀티테넌시 작업 중 반영)</li>
   <li>Track A·B가 <code>claimant/</code>·<code>executor/</code> 에이전트 구현 시 <code>shared/memory.py</code> 연결 — 각 트랙 담당, 범위 밖</li>
-  <li><span style="text-decoration:line-through">데모 전 find_prior_session_summary 복합 색인 1회 생성</span> — 2026-08-25 재검토에서 이 함수 자체가 <code>main.py</code> 어디서도 호출되지 않고 있었음을 발견(아래 콜아웃), 배선 후에도 색인 생성은 <strong>아직 미완료</strong></li>
+  <li><span style="text-decoration:line-through">데모 전 find_prior_session_summary 복합 색인 1회 생성</span> — 완료(2026-08-25, <code>development</code> DB, <code>agent_type</code>·<code>org_id</code>·<code>actor_ref</code>·<code>status</code> 동등 + <code>updated_at DESC</code>)</li>
   <li><span style="text-decoration:line-through">backend/infra terraform apply 승인 및 반영</span> — 완료(<code>agent_datastore</code> 바인딩 적용 확인)</li>
 </ul>
 </section>
@@ -350,8 +350,11 @@ Firestore 없이도 로직을 확인하려고 페이크 클라이언트로 스�
   프롬프트에 얹도록 배선했다(<code>payflow-agent</code> PR #8, <code>payflow-backend</code>
   PR #43). <code>executor_analyze</code>는 그대로 둔다 — 정산 실행은 특정 수취인
   하나에 안 묶여 자연스러운 <code>actor_ref</code>가 없다는 원래 판단이 여전히 유효하다.
-  <strong>남은 일</strong>: 이제 <code>find_prior_session_summary</code>가 실제로 호출되므로
-  Firestore 복합 색인 생성이 데모 전 필수다 — 배포 후 1회 트리거해서 만들어둘 것.
+  Firestore 복합 색인(<code>agent_type</code>·<code>org_id</code>·<code>actor_ref</code>·
+  <code>status</code> 동등 + <code>updated_at DESC</code>)도 같은 날
+  <code>development</code> DB에 생성 완료(<code>gcloud firestore indexes composite
+  create</code>) — 이 문서·<code>tiered-memory-review.html</code> 두 보고서의 계획
+  항목이 모두 끝났다.
 </div>
 
 <footer>
