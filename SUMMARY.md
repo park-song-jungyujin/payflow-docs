@@ -76,3 +76,4 @@
 | 2026-08-25 | 전체 아키텍처 다이어그램 보고서 작성 — `docs/reports/architecture-diagrams.html`, backend/agent/frontend/infra 코드 전수 조사 기반 Mermaid 5종(개요·인입·정산·인증·IAM) |
 | 2026-08-25 | Cloud Scheduler reconcile sweep 안전망 추가 — `POST /tasks/sweep-reconcile`이 5분마다 EXECUTING run 전체를 훑어 재예약 체인이 끊긴 건을 잡아냄. `feature/reconcile-sweep-cron` 브랜치, 미머지(payout 브랜치 게이트) |
 | 2026-08-25 | `tiered-memory-review.html` §8 계획 구현 — untrusted 턴 재주입 시 개별 래핑(Phase 1), `agent_sessions`·enqueue 두 곳에 org_id 스코핑 실배선(Phase 2). 에이전트 61·백엔드 620 passed |
+| 2026-08-25 | 청구자 세션에 이전 세션 요약 조회 연결 — `agent-session-memory.html` 결정 3이 실제로는 미배선(actor_ref 항상 None)이었음을 발견, recipient_id를 actor_ref로 연결해 find_prior_session_summary 실호출. 데모 전 Firestore 복합 색인 생성 필요(미완료). 에이전트 63·백엔드 620 passed |
