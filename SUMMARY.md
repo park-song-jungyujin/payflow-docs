@@ -95,3 +95,4 @@
 | 2026-08-25 | claims 점유를 진짜 CAS 트랜잭션으로 전환 — `guards/claims.link_claims_to_run_cas` 신설(Firestore 트랜잭션 안에서 CONFIRMED만 IN_RUN 전이, 동시 선점된 claim은 조용히 배치에서 제외). 기존 TEMP `link_claims_to_run`(무조건 덮어쓰기) 삭제. 브랜치 게이트 대상이라 `feat/claims-cas-transition` 브랜치로 push, 리뷰 대기 |
 | 2026-08-25 | `verified=False` recipient 송금 차단 TODO 검토 — 검증을 True로 바꾸는 경로 자체가 없어(관리자 UI 전무) 지금 막으면 모든 송금이 영구 차단됨을 확인. 해커톤 스코프상 구현 보류, TODO 주석만 실제 상태에 맞게 정정 |
 | 2026-08-25 | `agent_sessions` 메모리 계층 보완점 7건 재검증·수정 — 임베딩 실패 로깅·`close_session` 멱등성·`append_turn`/`close_session` 턴 배열 race(`ArrayUnion`)는 main 직접 push, org_id 필수화·executor CLOSED 재개 가드는 `fix/agent-sessions-hardening` 브랜치(미머지). turns 무한 증가·정렬 키 타입 혼재는 재현 불가/저위험으로 non-issue 종결. claimant_review 성공 신호 부재(신규 발견, 미착수)는 별도 항목으로 기록 |
+| 2026-08-25 | architecture-diagrams.html 리포트를 코드베이스 최신 상태(safety agent 배선, claims CAS 전환)로 갱신 |
