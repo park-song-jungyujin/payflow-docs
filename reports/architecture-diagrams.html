@@ -177,7 +177,7 @@ flowchart TD
     CLAIMANT_A & EXECUTOR_A -.->|"agent_sessions__{org_id} 직접 R/W\n(유일한 IAM 예외, per-org 파티션)"| FS
     AGENTSVC -->|"ADK LlmAgent (InMemorySessionService)\ntext-embedding-005 (close_session 요약 임베딩)"| VERTEX_AGENT["Vertex AI Gemini"]
     AGENTSVC -->|"POST /agents/drafts, /agents/audit\nOIDC(agent SA)"| GUARDS
-    EXECUTOR_A -.->|"POST /agents/executor/reject-items\n(agent 레포에 호출 툴 아직 없음)"| GUARDS
+    EXECUTOR_A -->|"POST /agents/executor/reject-items\n(flag_personal_use_items, submit 전 호출)"| GUARDS
 
     AUTH -->|R/W| FS[("Firestore Native\norgs·executors·sessions\nslack_workspaces·receipts\nclaims·recipients\nsettlement_runs·sender_items\nagent_drafts·audit_logs\nagent_sessions__{org_id} (파티션)")]
     INGEST -->|R/W| FS
@@ -205,7 +205,7 @@ flowchart TD
         <li><b>절대 규칙 3이 그림에 보이는 지점:</b> 청구자·집행자 agent 툴은 전부 "판단 결과 서술"만 <code>/agents/drafts</code>로 쓴다 — 금액은 <code>settlements</code>·<code>payouts</code> 라우터의 코드가 계산해 넣는다(<code>claimant/tools.py:56</code> "금액이나 날짜를 추측해서 적지 마세요. 숫자는 코드가 만듭니다.").</li>
         <li><b>매칭·claim 점유 둘 다 done으로 승격 (2026-08-25 밤):</b> <code>settlements</code> 라우터의 후보 매칭(금액±윈도우·날짜±윈도우·가맹점명)은 더는 TEMP가 아니라 의도된 결정론적 로직으로 문서화됐다(<code>src/matching/candidates.py</code> 상단 주석 정리). claim을 정산 실행에 묶는 전이도 조건 없이 덮어쓰는 batch write에서 <code>guards/claims.py:link_claims_to_run_cas</code> — 하나의 Firestore 트랜잭션 안에서 <code>CONFIRMED</code>만 재확인해 <code>IN_RUN</code>으로 전이하고, 다른 배치가 먼저 채간 claim은 조용히 배치에서 빼는 진짜 CAS — 로 교체됐다(<code>backend</code> 커밋 <code>ce3a20f</code>).</li>
         <li><b>safety agent 정식 배선 (2026-08-25 밤):</b> 정산 실행 생성 직후 executor 분석과 병렬로 <code>/agents/safety/report</code>가 enqueue되고, 응답 결과(<code>risk_report</code>)가 <code>GET /settlements/runs/{id}</code>의 <code>safety_report</code> 필드로 나간다. 여전히 조언자일 뿐 — <code>safety/tools.py</code> 자체 주석대로 한도 초과·중복 송금·CAS 전이 같은 실제 차단은 이 리포트가 비어 있어도 그대로 동작한다.</li>
-        <li><b>절반만 배선된 신규 경로:</b> backend는 <code>POST /agents/executor/reject-items</code>(executor agent가 개인용도 의심 물품을 자동 제외)를 이미 노출했지만, <code>agent</code> 레포의 <code>executor/tools.py</code>에는 이를 호출할 <code>flag_personal_use_items</code> 툴이 아직 없다 — 사람이 web 체크박스로 직접 하는 경로(<code>_apply_item_exclusion</code>)만 실제로 쓰인다.</li>
+        <li><b>청구 반려 자동화 정식 배선 (agent PR #14, origin/main):</b> executor agent가 이상징후 서술을 마치고 <code>submit_settlement_analysis</code>를 부르기 전, 개인용도로 의심되는 물품이 있으면 <code>flag_personal_use_items</code>로 <code>POST /agents/executor/reject-items</code>를 직접 호출해 그 물품만 반려한다(<code>executor/tools.py</code>). 사람이 web 체크박스로 하는 것과 최종 효과(<code>_apply_item_exclusion</code>)는 같고, 승인 전까지 사람이 언제든 되돌릴 수 있다.</li>
         <li><b>agent_sessions 예외 (v2 파티션):</b> IAM으로 컬렉션 단위를 못 좁히므로, claimant·executor 두 agent가 세션 컬렉션에 한해 Firestore SDK로 직접 R/W한다(<code>agent/shared/memory.py</code>). v2 마이그레이션 이후 단일 <code>agent_sessions</code>가 아니라 <code>agent_sessions__{org_id}</code> per-org 파티션으로 나뉘어 — org_id 자체가 데이터 격리 경계가 됐다(코드 컨벤션 only → 데이터 경계로 강화). 점선은 여전히 "이 경계가 IAM이 아닌 코드·스키마로 지켜진다"는 뜻.</li>
         <li><b>GCS 접근 비대칭:</b> api SA는 <code>storage.objectAdmin</code>(images/, raw_text/ 전체 쓰기)이지만 agent SA는 <code>raw_text/</code> prefix 조건부 <code>objectViewer</code>만 갖는다(<code>backend/infra/storage.tf:32-42</code>, 2026-08-25 추가) — claimant agent가 원본 이미지가 아니라 OCR 텍스트만 읽도록 IAM으로 강제.</li>
       </ul>
@@ -304,8 +304,11 @@ sequenceDiagram
     agent->>agent: 중복/미래날짜 탐지 서술 — 클러스터링은 code가 이미 완료
     agent->>api: POST /agents/drafts (EXECUTOR)
     api->>FS: agent_drafts 기록
+    opt 개인용도 의심 물품 있음
+        agent->>api: POST /agents/executor/reject-items\n(flag_personal_use_items, submit 전)
+        api->>FS: _apply_item_exclusion — 해당 물품만 반려
+    end
     agent->>FS: close_session — CLOSED, summary·summary_embedding 영속화
-    Note over agent: 개인용도 의심 물품 자동 반려\n(POST /agents/executor/reject-items)는 backend에만 있고\nagent 쪽 호출 툴은 아직 없음
 
     Tasks->>safety: POST /agents/safety/report (OIDC api SA)
     safety->>safety: 리스크 리포트 작성 (한도 초과·중복 송금 등 실제 차단은 안 함, 조언만)
