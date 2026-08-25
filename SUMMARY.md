@@ -82,3 +82,6 @@
 | 2026-08-25 | PR #10(머지됨) test plan 4항목 사후 검증 통과(pytest 93·마이그레이션 멱등성·벡터 색인 READY·close_session 배선). docs 포인터 bump c589b14는 이미 origin 양쪽에 있어 push 불필요. find_prior_session_summary 색인이 구 `agent_sessions`에만 있어 신규 파티션 `agent_sessions__unknown`에 누락됐던 것 발견·조치(복합 색인 생성 READY `CICAgJim14AK`, 런북 §5 보강) |
 | 2026-08-25 | `architecture-diagrams.html` v2 세션 메모리 반영 갱신 — `agent_sessions__{org_id}` per-org 파티션, 청구자·집행자 첫 턴 `find_prior_session_summary`/`find_similar_sessions`·응답 직전 `close_session` 영속화를 §2·§3 시퀀스에 추가, §1·§5 IAM 노트를 파티션 경계로 보강. 백엔드 enqueue 페이로드에 org_id·recipient_id 누락(미머지 PR #43) → `__unknown` 폴백을 주의 노트로 명시 |
 | 2026-08-25 | executor·claimant·safety 성능·일관성 튜닝 — 세 에이전트 temperature 0.2, executor·claimant 재분석 시 과거 INPUT 재주입 생략·JSON 직렬화, async 라우트의 동기 Firestore/임베딩 호출을 asyncio.to_thread로 위임(이벤트 루프 블로킹 제거). 에이전트 91 passed |
+| 2026-08-25 | 테스트용 Slack 워크스페이스 org_id 재매핑(DB 직접 수정) 및 org_id↔Slack/executor/세션 전반 정합성 점검 — dangling 참조 없음, `test_org_2` 워크스페이스 중복·"payflow" 이름 org 충돌 발견(미조치) |
+| 2026-08-25 | 청구자 에이전트 500 원인 규명 — org별 `agent_sessions__{org_id}` 복합 색인 누락으로 `find_prior_session_summary`가 FailedPrecondition. Firestore 색인 2개 org분 생성, `payflow-agent`에 예외 폴백 hotfix 커밋·푸시(`c33e2ef`) |
+| 2026-08-25 | Slack 워크스페이스 이름 불일치로 인한 `test_org_1`↔`test_org_2` 오배선 발견·재매핑, `get_or_create_default_org_id` 정렬 명시 hotfix 커밋·푸시(`61dd94b`) |
