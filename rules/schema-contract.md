@@ -379,6 +379,11 @@ fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처�
 배치 생성 시 하나의 Firestore 트랜잭션에서 `CONFIRMED → IN_RUN` 전이와
 `settlement_run_id` 기록을 함께 한다. 이미 `IN_RUN`인 claim은 전이 실패로 배치에서 빠진다.
 배치가 `FAILED`로 끝나면 `IN_RUN → CONFIRMED`로 되돌리고 `settlement_run_id`를 비운다.
+같은 전이를 claim 하나에 대해 사람이 직접 트리거할 수도 있다(`POST
+/settlements/runs/{run_id}/claims/{claim_id}/exclude`, DRAFT 상태에서만, B가
+호출) — 재청구 의심 등 집행자 에이전트가 서술만 하고 못 막는 claim을 사람이
+이 run에서 빼는 용도. 빠진 claim은 삭제되지 않고 다음 정산 실행 후보로 다시
+잡힐 수 있다.
 
 이 전이는 `api/src/guards/`(C)가 담당한다.
 
