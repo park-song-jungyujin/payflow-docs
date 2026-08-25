@@ -999,8 +999,19 @@ DRAFT 상태에서만 허용한다. 반려된 물품은 `receipts.items[i]`에
 `excluded: true`·`rejected_reason`·`rejected_by: "EXECUTOR"`로 남는다 — 사람이
 승인 전까지 web에서 언제든 되돌릴 수 있는 잠정 상태다. 반려 내역과 사유는
 `agent_drafts.payload.summary_text`("청구 반려 내역" 섹션)에도 사람이 읽을 문장으로
-같이 남는다 — 나중에 Slack으로 청구자에게 반려 사유를 보낼 때 이 필드가 근거가 된다
-(Slack 발송 자체는 아직 미구현).
+같이 남는다.
+
+**Slack 통보**: `POST /settlements/runs/{run_id}/approve`(guards, C)가 CAS 성공
+직후 `POST /tasks/notify-claim-rejections`(A, `ingest/routes.py`)를 enqueue한다.
+**승인 시점을 고른 이유** — 반려는 승인 전까지 잠정 상태이므로, 반려 직후가 아니라
+사람이 되돌릴 기회를 다 쓴 뒤(승인 시점)에 걷어야 "사람이 web에서 되돌린 반려"까지
+잘못 통보하지 않는다. 이 태스크는 run에 링크된 claim 전체의 `rejected_by ==
+"EXECUTOR"` 물품만 수취인별로 모아 DM 하나로 보낸다(`summary_text`를 다시 파싱하지
+않고 `rejected_reason` 구조화 필드를 그대로 쓴다). 영어 로케일(Slack `users.info`)이면
+발송 시점에 Gemma로 번역한다 — `reject-items` 요청(agent → api, 10초 타임아웃) 안에서
+번역하면 그 예산을 갉아먹어 반려 자체가 실패할 위험이 있어 의도적으로 여기로 미뤘다.
+알림은 조언성 부가 기능이라 실패해도 승인을 막지 않고, 금액이 걸린 동작이 아니라
+CAS 없이 at-least-once로 보낸다(드물게 중복 DM 가능).
 
 ### 세션 메모리 (청구자·집행자)
 
@@ -1074,6 +1085,7 @@ Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에�
 | `POST /tasks/parse-receipt` | A | `api/src/parsing/` |
 | `POST /tasks/apply-claimant-draft` | A | `api/src/ingest/` |
 | `POST /tasks/remind` | A | `api/src/ingest/` |
+| `POST /tasks/notify-claim-rejections` | A | `api/src/ingest/` |
 | `POST /tasks/execute-payout` | C | `api/src/payouts/` |
 | `POST /tasks/reconcile` | C | `api/src/payouts/` |
 

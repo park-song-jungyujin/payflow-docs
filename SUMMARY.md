@@ -88,3 +88,4 @@
 | 2026-08-25 | 청구 반려(물품 단위 정산 제외) 기능 — `PATCH /settlements/runs/{run}/claims/{claim}/items/{i}` 신설, DRAFT에서만 허용, claim.amount_minor를 parsed_amount_minor 기준으로 재계산(누적 감산 아님). web 물품 목록에 체크박스 추가. backend PR #47 머지, frontend main 직접 푸시 |
 | 2026-08-25 | 집행자 에이전트가 조용히 "분석 대기 중"에서 안 풀리던 버그 수정 — executor_analyze가 submit_settlement_analysis 성공 여부를 확인 안 하고 무조건 200을 반환하던 게 원인. ToolContext.state로 성공 여부를 확인해 실패 시 명시적으로 FAILED 기록. agent PR #13 머지 |
 | 2026-08-25 | 청구 반려 자동화 — 집행자 에이전트가 이상징후 분석 후 개인적 사용 의심 물품을 스스로 반려(flag_personal_use_items → POST /agents/executor/reject-items → _apply_item_exclusion 공유). 반려 내역·사유는 summary_text와 rejected_reason/rejected_by 필드에 남김(Slack 발송은 범위 밖, 나중 작업). backend 663·agent 96 passed |
+| 2026-08-25 | 청구 반려 내역 Slack 통보 — 승인 시점(반려 직후 아님, 사람이 되돌릴 기회를 다 쓴 뒤)에 POST /tasks/notify-claim-rejections를 enqueue, 수취인별로 DM 하나로 취합. 영어 로케일은 발송 시점에 Gemma 번역(reject-items 요청의 10초 예산을 안 건드리려고 의도적으로 미룸). backend 684 passed |
