@@ -113,7 +113,7 @@
 <main>
   <h1 id="top">Payflow — 전체 아키텍처 (코드 기준, 상세)</h1>
   <p class="subtitle">3인 스타트업 지출 정산 에이전트. backend(FastAPI) 28개 라우트, agent(ADK) 3개 서브에이전트,
-    frontend(Next.js BFF), <code>backend/infra/*.tf</code> 전부 코드 확인 기준, 2026-08-25.
+    frontend(Next.js BFF), <code>backend/infra/*.tf</code> 전부 코드 확인 기준, 2026-08-25 (v2 세션 메모리 머지 후 갱신).
     CI/CD·WIF는 <a href="cicd-infra-diagrams.html">cicd-infra-diagrams.html</a> 참조 — 이 문서는 런타임 데이터 흐름과 IAM 신뢰 경계 위주.</p>
 
   <nav class="toc">
@@ -173,11 +173,11 @@ flowchart TD
         EXECUTOR_A["executor agent\n중복·이상 서술 (산술 없음)"]
         SAFETY_A["safety agent\n승인 전 리스크 조언 (게이트 아님)"]
     end
-    CLAIMANT_A & EXECUTOR_A -.->|"agent_sessions 직접 R/W\n(유일한 IAM 예외)"| FS
-    AGENTSVC -->|"ADK LlmAgent\nInMemorySessionService"| VERTEX_AGENT["Vertex AI Gemini"]
+    CLAIMANT_A & EXECUTOR_A -.->|"agent_sessions__{org_id} 직접 R/W\n(유일한 IAM 예외, per-org 파티션)"| FS
+    AGENTSVC -->|"ADK LlmAgent (InMemorySessionService)\ntext-embedding-005 (close_session 요약 임베딩)"| VERTEX_AGENT["Vertex AI Gemini"]
     AGENTSVC -->|"POST /agents/drafts, /agents/audit\nOIDC(agent SA)"| GUARDS
 
-    AUTH -->|R/W| FS[("Firestore Native\norgs·executors·sessions\nslack_workspaces·receipts\nclaims·recipients\nsettlement_runs·sender_items\nagent_drafts·audit_logs")]
+    AUTH -->|R/W| FS[("Firestore Native\norgs·executors·sessions\nslack_workspaces·receipts\nclaims·recipients\nsettlement_runs·sender_items\nagent_drafts·audit_logs\nagent_sessions__{org_id} (파티션)")]
     INGEST -->|R/W| FS
     PARSE -->|R/W + GCS 저장| GCS[("GCS\n{project}-receipts\nimages/, raw_text/")]
     SETTLE -->|R/W| FS
@@ -203,7 +203,7 @@ flowchart TD
         <li><b>절대 규칙 1이 그림에 보이는 지점:</b> <code>agent</code>에서 PayPal로 가는 화살표가 아예 없다 — agent SA는 <code>secretAccessor</code> 바인딩이 없고(<code>backend/infra/iam.tf</code>), agent 코드베이스에 PayPal SDK import가 0건이다.</li>
         <li><b>절대 규칙 3이 그림에 보이는 지점:</b> 청구자·집행자 agent 툴은 전부 "판단 결과 서술"만 <code>/agents/drafts</code>로 쓴다 — 금액은 <code>settlements</code>·<code>payouts</code> 라우터의 코드가 계산해 넣는다(<code>claimant/tools.py:56</code> "금액이나 날짜를 추측해서 적지 마세요. 숫자는 코드가 만듭니다.").</li>
         <li><b>주황(부분구현):</b> <code>settlements</code> 라우터의 후보 매칭은 결정론적(금액±윈도우·날짜±윈도우·가맹점명) 임시 구현이다 — <code>src/matching/candidates.py</code>에 <code>TEMP(B)</code> 주석. 실행 시점 영수증 재검증(Gemini 단발 호출)은 구현·연결되어 있다.</li>
-        <li><b>agent_sessions 예외:</b> IAM으로 컬렉션 단위를 못 좁히므로, claimant·executor 두 agent가 <code>agent_sessions</code>에 한해 Firestore SDK로 직접 R/W한다(<code>agent/shared/memory.py</code>) — 코드 컨벤션으로만 지켜지는 경계라 점선.</li>
+        <li><b>agent_sessions 예외 (v2 파티션):</b> IAM으로 컬렉션 단위를 못 좁히므로, claimant·executor 두 agent가 세션 컬렉션에 한해 Firestore SDK로 직접 R/W한다(<code>agent/shared/memory.py</code>). v2 마이그레이션 이후 단일 <code>agent_sessions</code>가 아니라 <code>agent_sessions__{org_id}</code> per-org 파티션으로 나뉘어 — org_id 자체가 데이터 격리 경계가 됐다(코드 컨벤션 only → 데이터 경계로 강화). 점선은 여전히 "이 경계가 IAM이 아닌 코드·스키마로 지켜진다"는 뜻.</li>
         <li><b>GCS 접근 비대칭:</b> api SA는 <code>storage.objectAdmin</code>(images/, raw_text/ 전체 쓰기)이지만 agent SA는 <code>raw_text/</code> prefix 조건부 <code>objectViewer</code>만 갖는다(<code>backend/infra/storage.tf:32-42</code>, 2026-08-25 추가) — claimant agent가 원본 이미지가 아니라 OCR 텍스트만 읽도록 IAM으로 강제.</li>
       </ul>
     </div>
@@ -235,10 +235,15 @@ sequenceDiagram
     api->>FS: receipts 갱신 (PARSED, parsed_amount_minor, raw_text_gcs_uri)
     api->>Tasks: enqueue /agents/claimant/review (audience=agent)
     Tasks->>agent: POST /agents/claimant/review (OIDC api SA)
-    agent->>FS: agent_sessions 조회/이어쓰기 (직접 R/W, 유일한 예외)
+    agent->>FS: get_or_create_session → agent_sessions__{org_id}\n(첫 턴=session.turns 비어있음)
+    opt 첫 턴 (session.turns 비어있음)
+        agent->>FS: find_prior_session_summary\n(같은 recipient_id의 닫힌 세션 요약)
+        agent->>FS: find_similar_sessions\n(case_features 임베딩으로 cosine 유사 사건)
+    end
     agent->>agent: submit_receipt_review 판단 (업무/개인, 재요청 여부) — 산술 없음
     agent->>api: POST /agents/drafts (OIDC agent SA)
     api->>FS: agent_drafts 기록
+    agent->>FS: close_session — 상태 CLOSED, summary·summary_embedding 영속화\n(임베딩 실패해도 세션 종료는 막지 않음)
     api->>Tasks: enqueue /tasks/apply-claimant-draft
     Tasks->>api: POST /tasks/apply-claimant-draft (OIDC api SA)
     api->>FS: receipts 상태 반영 (CONFIRMED | NEEDS_REQUERY)
@@ -257,6 +262,8 @@ sequenceDiagram
         <li><b>이중 Gemini 호출 경로:</b> 이 파이프라인의 파싱은 <code>src/parsing/gemini.py</code>의 단발 구조화 출력이고, agent의 claimant 판단은 <code>agent/main.py</code>가 여는 별도의 ADK <code>Runner</code> 세션이다 — 서로 다른 신원(api SA vs agent SA)으로 Vertex AI를 호출한다.</li>
         <li><b>멱등성:</b> <code>task_id</code>(예: <code>CLAIMANT:{receipt_id}</code>)가 <code>agent_drafts</code> 문서 ID가 되므로 Cloud Tasks 재시도로 같은 태스크가 중복 실행돼도 draft가 덮어써질 뿐 중복 생성되지 않는다.</li>
         <li><b>agent → api 콜백 인증:</b> agent가 <code>/agents/drafts</code>·<code>/agents/audit</code>를 부를 때도 OIDC 토큰(agent SA 신원)을 쓰고, api가 이를 검증한다(<code>guards/oidc.py</code>) — 방향은 항상 <code>agent → api</code>이며 그 반대(api가 agent 결과를 기다리는 동기 호출)는 없다.</li>
+        <li><b>세션 메모리 v2 (2026-08-25 머지, PR #10):</b> <code>agent_sessions</code>는 단일 컬렉션이 아니라 <code>agent_sessions__{org_id}</code> per-org 파티션이다(<code>agent/shared/memory.py:25 _collection_name</code>). 청구자 첫 턴엔 같은 <code>recipient_id</code>의 닫힌 세션 요약(<code>find_prior_session_summary</code>)과 유사 사건 검색(<code>find_similar_sessions</code>, <code>case_features</code> 임베딩)을 프롬프트에 얹고, 응답 직전 <code>close_session</code>으로 상태를 <code>CLOSED</code>로 전이·<code>summary</code>·<code>summary_embedding</code>을 영속화한다(임베딩 실패해도 종료는 막지 않는다). 요약·쿼리가 같은 <code>format_case_features</code> 포매터를 거쳐 의미 공간을 일치시켰고, 금액 숫자는 특징 추출 단계에서 배제(<code>money-safety.md</code> 준수).</li>
+        <li><b>주의 — 백엔드 페이로드 갭:</b> 에이전트는 <code>body.get("org_id")</code>·<code>body.get("recipient_id")</code>로 스코핑 키를 읽지만(<code>main.py:164-165</code>), <code>parsing/enqueue.py</code>·<code>settlements/enqueue.py</code> 페이로드에는 아직 이 둘이 없다(미머지 PR #43). 따라서 프로덕션 claimant 흐름은 <code>org_id=""</code> → <code>agent_sessions__unknown</code> 파티션으로 폴백하며, <code>find_prior_session_summary</code>·<code>find_similar_sessions</code>의 org 스코핑은 <code>unknown</code> 파티션 안에서만 동작한다. 신규 파티션엔 복합 색인·벡터 색인을 각각 만들어야 한다(<code>docs/infra/firestore-vector-index-runbook.md</code>).</li>
       </ul>
     </div>
     <a class="back-top" href="#top">↑ 위로</a>
@@ -284,9 +291,14 @@ sequenceDiagram
     api->>Tasks: enqueue /agents/executor/analyze
     api-->>web: run_id
     Tasks->>agent: POST /agents/executor/analyze (OIDC api SA)
+    agent->>FS: get_or_create_session → agent_sessions__{org_id}\n(entity_id=run_id, actor_ref 없음)
+    opt 첫 턴 (session.turns 비어있음)
+        agent->>FS: find_similar_sessions\n(case_features 임베딩, find_prior_session_summary는 안 씀)
+    end
     agent->>agent: 중복/미래날짜 탐지 서술 — 클러스터링은 code가 이미 완료
     agent->>api: POST /agents/drafts (EXECUTOR)
     api->>FS: agent_drafts 기록
+    agent->>FS: close_session — CLOSED, summary·summary_embedding 영속화
 
     집행자->>web: 실행 상세 조회
     web->>api: GET /settlements/runs/{id}
@@ -397,7 +409,7 @@ flowchart LR
     SA_AGENT -->|roles/aiplatform.user| VERTEX
 
     SA_API -->|roles/datastore.user\n전체 컬렉션| FS[("Firestore")]
-    SA_AGENT -->|"roles/datastore.user\n코드로 agent_sessions만 접근"| FS
+    SA_AGENT -->|"roles/datastore.user\nagent_sessions__{org_id} 파티션만 접근\n(코드 컨벤션)"| FS
 
     GCS[("GCS: {project}-receipts")]
     SA_API -->|storage.objectAdmin\nimages/, raw_text/| GCS
@@ -420,10 +432,10 @@ flowchart LR
     </div>
     <div class="notes">
       <ul>
-        <li><b>agent가 돈에 못 닿는 이유가 IAM 3중으로 걸려있다:</b> ① Secret Manager 바인딩 자체가 없어 PayPal 자격증명을 못 읽고, ② Firestore는 권한상 전체 컬렉션에 닿지만 <code>agent_sessions</code> 외 접근은 코드 컨벤션(<code>agent/shared/</code> 모듈 경계)으로만 막혀 있고, ③ PayPal API 호출 코드 자체가 agent 레포에 없다(grep 0건).</li>
+        <li><b>agent가 돈에 못 닿는 이유가 IAM 3중으로 걸려있다:</b> ① Secret Manager 바인딩 자체가 없어 PayPal 자격증명을 못 읽고, ② Firestore는 권한상 전체 컬렉션에 닿지만 <code>agent_sessions__{org_id}</code> 파티션 외 접근은 코드 컨벤션(<code>agent/shared/</code> 모듈 경계)으로만 막혀 있고, ③ PayPal API 호출 코드 자체가 agent 레포에 없다(grep 0건). v2 파티셔닝으로 org_id가 데이터 격리 경계가 됐지만 IAM 단의 권한은 여전히 <code>roles/datastore.user</code> 전체 — 진짜 좁히는 건 여전히 코드다.</li>
         <li><b>invoker 제한이 사실상의 진짜 게이트다:</b> agent 서비스는 ingress는 열려있지만(<code>INGRESS_TRAFFIC_ALL</code>) <code>run.invoker</code>가 api SA 하나에만 부여돼 있어(<code>iam.tf</code> <code>agent_invoker_api_only</code>), 외부에서 직접 HTTP로 agent를 부를 수 없다 — Cloud Tasks가 api SA 신원으로 발급한 OIDC 토큰이 유일한 진입 경로.</li>
         <li><b>GCS 조건부 IAM (2026-08-25):</b> agent SA의 <code>objectViewer</code>는 <code>resource.name.startsWith(".../raw_text/")</code> 조건이 붙어 있어, 같은 버킷의 <code>images/</code>(원본 영수증 이미지)는 agent가 절대 읽을 수 없다 — claimant agent가 보는 건 OCR 텍스트뿐.</li>
-        <li>WIF/CI 배포 파이프라인(레포별 격리, deployer SA 권한)은 이 문서에서 다루지 않는다 — <a href="cicd-infra-diagrams.html">cicd-infra-diagrams.html</a> "전체 구조" 섹션 참조. 그 문서 작성(2026-08-20) 이후 추가된 변경: <code>payflow-terraform-admin</code> SA(2026-08-22), <code>orgs/executors/sessions/slack_workspaces</code> 스키마, GCS <code>raw_text/</code> 조건부 IAM(2026-08-25).</li>
+        <li>WIF/CI 배포 파이프라인(레포별 격리, deployer SA 권한)은 이 문서에서 다루지 않는다 — <a href="cicd-infra-diagrams.html">cicd-infra-diagrams.html</a> "전체 구조" 섹션 참조. 그 문서 작성(2026-08-20) 이후 추가된 변경: <code>payflow-terraform-admin</code> SA(2026-08-22), <code>orgs/executors/sessions/slack_workspaces</code> 스키마, GCS <code>raw_text/</code> 조건부 IAM(2026-08-25), <code>agent_sessions__{org_id}</code> 파티셔닝 + 복합·벡터 색인(2026-08-25, PR #10 머지).</li>
       </ul>
     </div>
     <a class="back-top" href="#top">↑ 위로</a>
