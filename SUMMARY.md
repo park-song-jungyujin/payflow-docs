@@ -97,3 +97,4 @@
 | 2026-08-25 | `agent_sessions` 메모리 계층 보완점 7건 재검증·수정 — 임베딩 실패 로깅·`close_session` 멱등성·`append_turn`/`close_session` 턴 배열 race(`ArrayUnion`)는 main 직접 push, org_id 필수화·executor CLOSED 재개 가드는 `fix/agent-sessions-hardening` 브랜치(미머지). turns 무한 증가·정렬 키 타입 혼재는 재현 불가/저위험으로 non-issue 종결. claimant_review 성공 신호 부재(신규 발견, 미착수)는 별도 항목으로 기록 |
 | 2026-08-25 | architecture-diagrams.html 리포트를 코드베이스 최신 상태(safety agent 배선, claims CAS 전환)로 갱신 |
 | 2026-08-26 | 거래일자 미검출 receipt 재요청을 청구자 에이전트(LLM) 확률적 판정에서 `parsing/pipeline.py` 코드 결정론적 규칙으로 전환 — `apply_claimant_verdict` 직접 호출로 needs_requery 확정, 재촬영 DM 즉시 발송 보장. 큐 인입 전 필터링은 3초 ack 제약상 TODO로 보류 |
+| 2026-08-26 | E2E(Cloud Run 로그) 확인 중 위 수정의 DM 미발송 버그 발견·수정 — `_requery_message`가 `agent_drafts`에서만 문안을 읽는데 새 코드 경로가 그 문서를 안 써서 조용히 무발송이던 것을 `write_agent_draft_document`로 해결. `claim_requests.reason` 하드코딩 `AMOUNT_MISMATCH` 버그도 같이 수정(`CLAIMANT_REVIEW_FAILED`/`DATE_MISSING` 추가) |
