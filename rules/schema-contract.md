@@ -980,6 +980,28 @@ def approval_amount_hash(run: SettlementRun) -> str:
 안전 확인 에이전트의 `risk_report`는 `audit_logs.reason`에 그대로 저장된다.
 **게이트가 아니다.** 이 리포트가 비어 있어도 승인과 송금은 코드 게이트만으로 진행된다.
 
+### 청구 반려 자동화 (집행자)
+
+집행자에게 넘기는 후보 `claims` 목록의 각 항목에는 `items`(영수증 품목명·금액
+목록)도 실린다 — `api/src/settlements/routes.py.create_settlement_run_route`가
+`_claim_summary`(§6 최소화 대상, items 없음) 위에 이걸 얹어서 보낸다.
+
+이상징후 서술을 마친 뒤, 집행자는 물품명만으로 업무 관련성이 뚜렷이 없어 보이는
+항목을 `flag_personal_use_items` 툴로 반려할 수 있다. 이 툴은
+`POST /agents/executor/reject-items`(agent 서비스 계정이 OIDC로 직접 호출,
+`/agents/drafts`와 같은 인증 방식)를 불러 `settlements/routes.py._apply_item_exclusion`을
+태운다 — 사람이 web 체크박스로 물품 하나를 직접 반려하는 것(`PATCH
+/settlements/runs/{run_id}/claims/{claim_id}/items/{item_index}`)과 최종 효과가
+같은 함수를 공유한다. **금액 재계산은 코드가 한다(절대 규칙 3)** — 에이전트는 "어떤
+물품이 의심스러운가"와 사유(`reason`)만 판단해서 넘긴다.
+
+DRAFT 상태에서만 허용한다. 반려된 물품은 `receipts.items[i]`에
+`excluded: true`·`rejected_reason`·`rejected_by: "EXECUTOR"`로 남는다 — 사람이
+승인 전까지 web에서 언제든 되돌릴 수 있는 잠정 상태다. 반려 내역과 사유는
+`agent_drafts.payload.summary_text`("청구 반려 내역" 섹션)에도 사람이 읽을 문장으로
+같이 남는다 — 나중에 Slack으로 청구자에게 반려 사유를 보낼 때 이 필드가 근거가 된다
+(Slack 발송 자체는 아직 미구현).
+
 ### 세션 메모리 (청구자·집행자)
 
 같은 `entity_id`(청구자는 `claim_request_id`, 집행자는 `settlement_run_id`)로 다시
@@ -1054,6 +1076,14 @@ Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에�
 | `POST /tasks/remind` | A | `api/src/ingest/` |
 | `POST /tasks/execute-payout` | C | `api/src/payouts/` |
 | `POST /tasks/reconcile` | C | `api/src/payouts/` |
+
+### agent 전용 (OIDC 필수, agent 서비스 계정이 직접 호출 — Cloud Tasks 경유 아님)
+
+| 라우트 | 트랙 | 핸들러 위치 |
+|---|---|---|
+| `POST /agents/drafts` | C | `api/src/guards/` |
+| `POST /agents/audit` | C | `api/src/guards/` |
+| `POST /agents/executor/reject-items` | B | `api/src/settlements/` |
 
 ---
 

@@ -78,3 +78,6 @@
 | 2026-08-25 | `tiered-memory-review.html` §8 계획 구현 — untrusted 턴 재주입 시 개별 래핑(Phase 1), `agent_sessions`·enqueue 두 곳에 org_id 스코핑 실배선(Phase 2). 에이전트 61·백엔드 620 passed |
 | 2026-08-25 | 청구자 세션에 이전 세션 요약 조회 연결 — `agent-session-memory.html` 결정 3이 실제로는 미배선(actor_ref 항상 None)이었음을 발견, recipient_id를 actor_ref로 연결해 find_prior_session_summary 실호출. 에이전트 63·백엔드 620 passed |
 | 2026-08-25 | Firestore 복합 색인 생성(`development` DB, `agent_sessions`) — find_prior_session_summary 쿼리용. 메모리 관련 보고서 2종 계획 전부 완료 |
+| 2026-08-25 | 청구 반려(물품 단위 정산 제외) 기능 — `PATCH /settlements/runs/{run}/claims/{claim}/items/{i}` 신설, DRAFT에서만 허용, claim.amount_minor를 parsed_amount_minor 기준으로 재계산(누적 감산 아님). web 물품 목록에 체크박스 추가. backend PR #47 머지, frontend main 직접 푸시 |
+| 2026-08-25 | 집행자 에이전트가 조용히 "분석 대기 중"에서 안 풀리던 버그 수정 — executor_analyze가 submit_settlement_analysis 성공 여부를 확인 안 하고 무조건 200을 반환하던 게 원인. ToolContext.state로 성공 여부를 확인해 실패 시 명시적으로 FAILED 기록. agent PR #13 머지 |
+| 2026-08-25 | 청구 반려 자동화 — 집행자 에이전트가 이상징후 분석 후 개인적 사용 의심 물품을 스스로 반려(flag_personal_use_items → POST /agents/executor/reject-items → _apply_item_exclusion 공유). 반려 내역·사유는 summary_text와 rejected_reason/rejected_by 필드에 남김(Slack 발송은 범위 밖, 나중 작업). backend 663·agent 96 passed |
