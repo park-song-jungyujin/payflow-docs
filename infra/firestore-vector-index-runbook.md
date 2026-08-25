@@ -97,10 +97,54 @@ gcloud firestore documents list \
 호출해 닫힌 세션을 쌓은 뒤, 같은 org의 새 요청에서 "관련 과거 사례" 블록에
 과거 사건 요약이 주입되는지를 `agent` 로그로 확인한다.
 
+## 5. `find_prior_session_summary` 복합 색인(벡터 아님)
+
+`find_prior_session_summary`(`shared/memory.py`)는 같은 org·`actor_ref`의
+닫힌 세션 중 최근 요약을 찾는다 — `claimant_review`(`main.py`)가 첫 호출일 때
+`try`/`except` 없이 직접 부른다. 벡터 색인과 달리 `FAILED_PRECONDITION`를
+삼키지 않으므로 색인이 없으면 엔드포인트가 500으로 떨어진다.
+
+쿼리 구조:
+
+```
+.collection("agent_sessions__{org_id}")
+  .where("agent_type", "==", ...)
+  .where("org_id", "==", ...)
+  .where("actor_ref", "==", ...)
+  .where("status", "==", "CLOSED")
+  .order_by("updated_at", DESCENDING)
+  .limit(5)
+```
+
+필요 색인 — 동등 필터 4개 + 정렬 1개. **주의: org마다 따로 만든다** (컬렉션이
+`agent_sessions__{org_id}`로 파티셔닝돼 있어 컬렉션별 색인이 된다).
+
+```bash
+ORG=unknown   # 대상 org_id로 교체
+gcloud firestore indexes composite create \
+  --project=payflow-hackathon-2026 \
+  --database=development \
+  --collection-group="agent_sessions__${ORG}" \
+  --field-config='[{"field-path":"agent_type","order":"ascending"},
+                   {"field-path":"org_id","order":"ascending"},
+                   {"field-path":"actor_ref","order":"ascending"},
+                   {"field-path":"status","order":"ascending"},
+                   {"field-path":"updated_at","order":"descending"}]' \
+  --async
+```
+
+`development` DB 현재 상태(2026-08-25):
+- `agent_sessions__unknown` — 생성 완료, `READY`(`CICAgJim14AK`).
+- `agent_sessions`(구 단일 컬렉션)에도 동일 색인이 있으나(`CICAgOjXh4EK`),
+  v2 마이그레이션으로 데이터가 `agent_sessions__unknown`로 옮겨갔으므로
+  구 컬렉션 색인은 닿지 않는다 — 신규 파티션마다 별도 생성이 필수다.
+
 ## 언제 다시 만드나
 
 새 org가 생길 때마다(신규 조직 온보딩). 코드는 org 수를 모르므로 자동으로
-만들지 않는다 — 온보딩 절차에 이 런북 1회 실행을 포함시킨다.
+만들지 않는다 — 온보딩 절차에 이 런북 1회 실행을 포함시킨다. **위 §2 벡터
+색인과 §5 `find_prior_session_summary` 색인 둘 다** 만들어야 한다.
 
 `find_similar_sessions`의 필터(`agent_type`, `status`)나 벡터 필드
-(`summary_embedding`)가 바뀌면 인덱스 정의도 같이 바꿔야 한다.
+(`summary_embedding`)가 바뀌면 §2 인덱스 정의도 같이 바꿔야 한다.
+`find_prior_session_summary`의 필터·정렬이 바뀌면 §5 정의도 같이.

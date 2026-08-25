@@ -79,3 +79,4 @@
 | 2026-08-25 | 청구자 세션에 이전 세션 요약 조회 연결 — `agent-session-memory.html` 결정 3이 실제로는 미배선(actor_ref 항상 None)이었음을 발견, recipient_id를 actor_ref로 연결해 find_prior_session_summary 실호출. 에이전트 63·백엔드 620 passed |
 | 2026-08-25 | Firestore 복합 색인 생성(`development` DB, `agent_sessions`) — find_prior_session_summary 쿼리용. 메모리 관련 보고서 2종 계획 전부 완료 |
 | 2026-08-25 | 세션 메모리 v2 피드백 3건 반영(PR #10 후속) — `fetch_full_session_history`의 `org_id`를 `tool_context.state`에서 바인딩, 사건 특징 결정론적 추출로 과거 요약·현재 쿼리 임베딩 의미 공간 일치화, `close_session` 프로덕션 배선. 에이전트 93 passed |
+| 2026-08-25 | PR #10(머지됨) test plan 4항목 사후 검증 통과(pytest 93·마이그레이션 멱등성·벡터 색인 READY·close_session 배선). docs 포인터 bump c589b14는 이미 origin 양쪽에 있어 push 불필요. find_prior_session_summary 색인이 구 `agent_sessions`에만 있어 신규 파티션 `agent_sessions__unknown`에 누락됐던 것 발견·조치(복합 색인 생성 READY `CICAgJim14AK`, 런북 §5 보강) |
