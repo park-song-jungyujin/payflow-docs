@@ -43,7 +43,8 @@ gcloud firestore collections list \
   .find_nearest(vector_field="summary_embedding", distance_measure=COSINE)
 ```
 
-필요 인덱스 — 동등 필터 2개 + 벡터 필드 1개:
+필요 인덱스 — 동등 필터 2개 + 벡터 필드 1개. 벡터 필드엔 차원을 명시해야
+한다(`text-embedding-005` = 768차원).
 
 ```bash
 ORG=org_1   # 대상 org_id로 교체. unknown 파티션은 ORG=unknown
@@ -51,30 +52,31 @@ gcloud firestore indexes composite create \
   --project=payflow-hackathon-2026 \
   --database=development \
   --collection-group="agent_sessions__${ORG}" \
-  --field-config field-path=agent_type,order=ASCENDING \
-  --field-config field-path=status,order=ASCENDING \
-  --field-config field-path=summary_embedding,vector-config=vector
+  --field-config='[{"field-path":"agent_type","order":"ascending"},
+                   {"field-path":"status","order":"ascending"},
+                   {"field-path":"summary_embedding","vector-config":{"dimension":768,"flat":{}}}]' \
+  --async
 ```
 
 주의:
-- `--collection-group`이 아니라 컬렉션명 그대로 쓴다. Firestore는 컬렉션 ID로
-  그룹화하므로 `agent_sessions__org_1` 컬렉션 안의 모든 문서에 적용된다.
-- `vector-config=vector` 옆에 차원을 명시하지 않는다 — gcloud가 문서에서 추론한다.
-  `summary_embedding`은 `text-embedding-005`(768차원) 출력이다.
+- gcloud의 `vector-config`는 `dimension`과 `flat` 키만 받는다(단순 `=vector`가 아님).
+  JSON 배열 형태로 주면 확실하다. 차원을 모르면 콘솔에서 문서 하나를 열어
+  `summary_embedding` 배열 길이를 세면 된다(현재 `text-embedding-005` = 768).
+- 컬렉션명 그대로 쓴다. Firestore는 컬렉션 ID로 그룹화하므로
+  `agent_sessions__org_1` 컬렉션 안의 모든 문서에 적용된다.
 
 ## 3. 생성 상태 확인 (비동기)
 
 인덱스는 즉시 `READY`가 아니다. 수 분 소요.
 
 ```bash
-gcloud firestore indexes list \
+gcloud firestore indexes composite list \
   --project=payflow-hackathon-2026 \
-  --database=development \
-  --format="table(name,collectionGroup,fields.array.id,fields.array.vectorConfig,state)"
+  --database=development
 ```
 
-`state=READY`가 될 때까지 대기. 그 전에 `find_similar_sessions`를 호출하면
-여전히 `FAILED_PRECONDITION` → `[]` 폴백.
+`agent_sessions__{org_id}` 행의 `state`가 `READY`가 될 때까지 대기. `CREATING`인
+동안 `find_similar_sessions`를 호출하면 여전히 `FAILED_PRECONDITION` → `[]` 폴백.
 
 ## 4. 동작 확인
 
