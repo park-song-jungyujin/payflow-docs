@@ -106,3 +106,4 @@
 | 2026-08-26 | Gemma 번역 기능 동작 확인 — 로그·Firestore 전수 조사 결과 성공 사례 0건(env 변수 누락 → malformed output 순으로 실패), 마지막 시도가 어제 타임아웃 설정 배포 이전이라 현재 배포본 기준 미검증 상태로 결론 |
 | 2026-08-26 | 재청구 의심(중복/기송금) claim을 정산에서 통째로 뺄 방법이 없던 근본 문제 수정 — `guards/claims.unlink_claim_from_run_cas`(CAS로 IN_RUN→CONFIRMED 복귀) + `POST .../claims/{claim_id}/exclude` 라우트 신설, frontend에 제외 버튼·BFF 프록시 추가. backend·frontend 모두 main 머지 후 배포 완료 |
 | 2026-08-26 | DRAFT 화면 총액이 claim 체크 상태와 무관하게 항상 0으로 보이던 문제(승인 시점에야 계산되는 TEMP 필드를 그대로 표시) 수정 — DRAFT일 때만 claim별 USD 환산 잠정 합계를 계산해 표시, 실제 승인 계산 로직은 안 건드림. claim 통째 제외 버튼은 "데모에서 안 쓸 것" 판단으로 frontend만 되돌림(backend 엔드포인트는 유지), 배포 완료 |
+| 2026-08-26 | 이미 송금 완료된 영수증 재청구(exact_duplicate_groups의 already_settled_claim_ids)로 확인된 claim을 집행자 에이전트가 자동 반려하도록 추가 — `flag_duplicate_claims` 툴 신설, claim의 모든 물품을 반려해 체크박스가 자동으로 꺼지게 함(사람이 web에서 언제든 되돌릴 수 있음). agent main 배포 완료 |
