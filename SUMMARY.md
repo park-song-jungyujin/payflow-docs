@@ -73,3 +73,5 @@
 | 2026-08-22 | 멀티테넌시 구현 — backend `src/auth/`(Google/Slack OAuth, 세션), 승인 라우트의 신원 스푸핑 구멍(`demo_approver`) 수정, Slack lazy recipient 등록, org_id 스코핑. frontend Google 로그인 페이지 + 세션 쿠키 + `proxy.ts`(Next 16 신규 컨벤션). 두 레포 모두 `feat/multi-tenant-auth` 브랜치 커밋 완료(백엔드 테스트 392개, 프론트 typecheck/lint/test/build 전부 통과), PR은 다음 단계 |
 | 2026-08-25 | Slack OAuth 콜백 리다이렉트 localhost 버그 수정 — `req.url` → `PUBLIC_APP_URL` 기준으로 통일 |
 | 2026-08-25 | Slack 워크스페이스 설치 시 온보딩 DM 자동 발송 — `/auth/slack/callback`에서 `users.list`로 멤버 열거 후 각자에게 PayPal 이메일 등록 요청 DM 발송(best-effort) |
+| 2026-08-25 | 전체 아키텍처 다이어그램 보고서 작성 — `docs/reports/architecture-diagrams.html`, backend/agent/frontend/infra 코드 전수 조사 기반 Mermaid 5종(개요·인입·정산·인증·IAM) |
+| 2026-08-25 | Cloud Scheduler reconcile sweep 안전망 추가 — `POST /tasks/sweep-reconcile`이 5분마다 EXECUTING run 전체를 훑어 재예약 체인이 끊긴 건을 잡아냄. `feature/reconcile-sweep-cron` 브랜치, 미머지(payout 브랜치 게이트) |

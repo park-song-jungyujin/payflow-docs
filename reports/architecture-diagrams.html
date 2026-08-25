@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Payflow 아키텍처 (현재 코드 기준)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --border: #d8d8d8;
+    --muted: #666;
+    --accent-a: #2563eb;
+    --done: #059669;
+    --partial: #d97706;
+    --pending: #9ca3af;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Pretendard, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin-bottom: 0.2rem;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.2rem;
+  }
+  nav.toc {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1.2rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.88rem;
+  }
+  nav.toc b { display: block; margin-bottom: 0.4rem; }
+  nav.toc a { color: var(--accent-a); text-decoration: none; margin-right: 1rem; }
+  nav.toc a:hover { text-decoration: underline; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1.2rem;
+    margin-bottom: 2.5rem;
+    font-size: 0.88rem;
+  }
+  .legend .item { display: flex; align-items: center; gap: 0.5rem; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+  .swatch.done { background: var(--done); }
+  .swatch.partial { background: var(--partial); }
+  .swatch.pending { background: var(--pending); }
+  section {
+    margin-bottom: 3rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    scroll-margin-top: 1rem;
+  }
+  section h2 {
+    font-size: 1.2rem;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    color: white;
+    background: var(--accent-a);
+    white-space: nowrap;
+  }
+  .diagram {
+    overflow-x: auto;
+    margin: 1rem 0;
+    padding: 0.5rem;
+  }
+  .notes {
+    font-size: 0.88rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 0.8rem;
+    margin-top: 1rem;
+  }
+  .notes ul { margin: 0.3rem 0; padding-left: 1.3rem; }
+  .notes li + li { margin-top: 0.4rem; }
+  .notes code { background: #f3f3f3; padding: 0.05rem 0.3rem; border-radius: 4px; }
+  .back-top {
+    display: inline-block;
+    font-size: 0.8rem;
+    color: var(--accent-a);
+    text-decoration: none;
+    margin-top: 0.8rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="top">Payflow — 전체 아키텍처 (코드 기준, 상세)</h1>
+  <p class="subtitle">3인 스타트업 지출 정산 에이전트. backend(FastAPI) 28개 라우트, agent(ADK) 3개 서브에이전트,
+    frontend(Next.js BFF), <code>backend/infra/*.tf</code> 전부 코드 확인 기준, 2026-08-25.
+    CI/CD·WIF는 <a href="cicd-infra-diagrams.html">cicd-infra-diagrams.html</a> 참조 — 이 문서는 런타임 데이터 흐름과 IAM 신뢰 경계 위주.</p>
+
+  <nav class="toc">
+    <b>목차</b>
+    <a href="#overview">1. 전체 시스템 개요</a>
+    <a href="#ingest">2. 영수증 인입 파이프라인</a>
+    <a href="#settlement">3. 정산·승인·송금 파이프라인</a>
+    <a href="#auth">4. 인증 · 멀티테넌시</a>
+    <a href="#iam">5. 런타임 IAM 신뢰 경계</a>
+  </nav>
+
+  <div class="legend">
+    <div class="item"><span class="swatch done"></span>구현·배포됨</div>
+    <div class="item"><span class="swatch partial"></span>부분 구현 — 동작은 하나 임시/단순화된 로직</div>
+    <div class="item"><span class="swatch pending"></span>미구현 — 경로/스텁만 존재</div>
+  </div>
+
+  <section id="overview">
+    <h2><span class="badge">1. 전체 시스템 개요</span> 신뢰 경계와 서비스 책임</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    CLAIMANT((청구자\nSlack)) -->|영수증 이미지| SLACKAPI["Slack API"]
+    EXECUTOR((집행자\n브라우저)) -->|Google 로그인 · 승인| WEB
+
+    SLACKAPI -->|"POST /slack/events\n서명검증"| API
+    SLACKAPI -->|"POST /slack/interactions"| API
+
+    subgraph WEBSVC["payflow-web — Next.js BFF (시크릿 없음, public)"]
+        WEB["route handlers\n/api/auth/*, /api/settlements/*"]
+    end
+    WEB -->|"프록시: 세션 쿠키 → Bearer"| API
+
+    subgraph APISVC["payflow-api — FastAPI (public, 시크릿 전부 소유)"]
+        AUTH["auth 라우터\nGoogle/Slack OAuth, 세션"]
+        INGEST["ingest 라우터\nSlack webhook, 파싱 enqueue"]
+        PARSE["parsing 라우터\n/tasks/parse-receipt"]
+        SETTLE["settlements 라우터\n매칭 · 검증 · export"]
+        GUARDS["guards 라우터\n승인 CAS · 토큰 · agent_drafts · audit"]
+        PAYOUT["payouts 라우터\n/payouts, /tasks/execute-payout, /tasks/reconcile"]
+    end
+
+    API((("api\n7개 라우터\n28 endpoints"))) -.-> AUTH & INGEST & PARSE & SETTLE & GUARDS & PAYOUT
+
+    PARSE -->|"단발 구조화출력\nGemini(파싱)"| VERTEX_PARSE["Vertex AI Gemini"]
+    SETTLE -->|"단발 재검증\n(POST /settlements/runs, 동기)"| VERTEX_PARSE
+
+    INGEST -->|enqueue| TASKS[("Cloud Tasks\npayflow-queue")]
+    PARSE -->|enqueue| TASKS
+    SETTLE -->|"enqueue /agents/executor/analyze\naudience=agent"| TASKS
+    PARSE -->|"enqueue /agents/claimant/review\naudience=agent"| TASKS
+    TASKS -->|"OIDC(api SA)\nself-callback"| API
+    TASKS -->|"OIDC(api SA)\ninvoker=api SA만"| AGENTSVC
+
+    subgraph AGENTSVC["payflow-agent — ADK (invoker=api SA만, PayPal 접근 불가)"]
+        CLAIMANT_A["claimant agent\n업무/개인 분류, 재요청 문안"]
+        EXECUTOR_A["executor agent\n중복·이상 서술 (산술 없음)"]
+        SAFETY_A["safety agent\n승인 전 리스크 조언 (게이트 아님)"]
+    end
+    CLAIMANT_A & EXECUTOR_A -.->|"agent_sessions 직접 R/W\n(유일한 IAM 예외)"| FS
+    AGENTSVC -->|"ADK LlmAgent\nInMemorySessionService"| VERTEX_AGENT["Vertex AI Gemini"]
+    AGENTSVC -->|"POST /agents/drafts, /agents/audit\nOIDC(agent SA)"| GUARDS
+
+    AUTH -->|R/W| FS[("Firestore Native\norgs·executors·sessions\nslack_workspaces·receipts\nclaims·recipients\nsettlement_runs·sender_items\nagent_drafts·audit_logs")]
+    INGEST -->|R/W| FS
+    PARSE -->|R/W + GCS 저장| GCS[("GCS\n{project}-receipts\nimages/, raw_text/")]
+    SETTLE -->|R/W| FS
+    GUARDS -->|R/W| FS
+    PAYOUT -->|R/W| FS
+    AGENTSVC -.->|"raw_text/ prefix만\nobjectViewer"| GCS
+
+    AUTH -->|"token 교환"| GOOGLE["Google OAuth"]
+    AUTH -->|"code 교환, 멤버 목록\n온보딩 DM"| SLACKAPI
+    PAYOUT -->|"Payouts API\nRequest-Id 멱등"| PAYPAL["PayPal"]
+    PAYOUT -.->|"webhook (best-effort)"| PAYPALWH["PayPal webhook"]
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#065f46;
+    classDef partial fill:#fef3c7,stroke:#d97706,color:#92400e;
+    classDef pending fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray: 4 3;
+    class WEB,AUTH,INGEST,PARSE,GUARDS,PAYOUT,TASKS,FS,GCS,GOOGLE,SLACKAPI,PAYPAL,VERTEX_PARSE,VERTEX_AGENT,CLAIMANT_A,EXECUTOR_A,SAFETY_A,CLAIMANT,EXECUTOR done
+    class SETTLE partial
+    class PAYPALWH pending
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>절대 규칙 1이 그림에 보이는 지점:</b> <code>agent</code>에서 PayPal로 가는 화살표가 아예 없다 — agent SA는 <code>secretAccessor</code> 바인딩이 없고(<code>backend/infra/iam.tf</code>), agent 코드베이스에 PayPal SDK import가 0건이다.</li>
+        <li><b>절대 규칙 3이 그림에 보이는 지점:</b> 청구자·집행자 agent 툴은 전부 "판단 결과 서술"만 <code>/agents/drafts</code>로 쓴다 — 금액은 <code>settlements</code>·<code>payouts</code> 라우터의 코드가 계산해 넣는다(<code>claimant/tools.py:56</code> "금액이나 날짜를 추측해서 적지 마세요. 숫자는 코드가 만듭니다.").</li>
+        <li><b>주황(부분구현):</b> <code>settlements</code> 라우터의 후보 매칭은 결정론적(금액±윈도우·날짜±윈도우·가맹점명) 임시 구현이다 — <code>src/matching/candidates.py</code>에 <code>TEMP(B)</code> 주석. 실행 시점 영수증 재검증(Gemini 단발 호출)은 구현·연결되어 있다.</li>
+        <li><b>agent_sessions 예외:</b> IAM으로 컬렉션 단위를 못 좁히므로, claimant·executor 두 agent가 <code>agent_sessions</code>에 한해 Firestore SDK로 직접 R/W한다(<code>agent/shared/memory.py</code>) — 코드 컨벤션으로만 지켜지는 경계라 점선.</li>
+        <li><b>GCS 접근 비대칭:</b> api SA는 <code>storage.objectAdmin</code>(images/, raw_text/ 전체 쓰기)이지만 agent SA는 <code>raw_text/</code> prefix 조건부 <code>objectViewer</code>만 갖는다(<code>backend/infra/storage.tf:32-42</code>, 2026-08-25 추가) — claimant agent가 원본 이미지가 아니라 OCR 텍스트만 읽도록 IAM으로 강제.</li>
+      </ul>
+    </div>
+    <a class="back-top" href="#top">↑ 위로</a>
+  </section>
+
+  <section id="ingest">
+    <h2><span class="badge">2. 영수증 인입 파이프라인</span> Slack DM → 파싱 → claimant 검토 → 재요청 루프</h2>
+    <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    actor 청구자
+    participant Slack
+    participant api as api (ingest)
+    participant Tasks as Cloud Tasks
+    participant Gemini as Vertex AI (Gemini, 단발)
+    participant GCS
+    participant agent as agent (claimant)
+    participant FS as Firestore
+
+    청구자->>Slack: 영수증 이미지 업로드 (DM)
+    Slack->>api: POST /slack/events (서명검증, ≤3s)
+    api->>FS: receipts 문서 생성 (RECEIVED)
+    api->>Tasks: enqueue parse-receipt
+    api-->>Slack: 200 OK
+    Tasks->>api: POST /tasks/parse-receipt (OIDC api SA)
+    api->>Gemini: 영수증 이미지 → 구조화 JSON
+    api->>GCS: images/{receipt_id}, raw_text/{receipt_id}.txt
+    api->>FS: receipts 갱신 (PARSED, parsed_amount_minor, raw_text_gcs_uri)
+    api->>Tasks: enqueue /agents/claimant/review (audience=agent)
+    Tasks->>agent: POST /agents/claimant/review (OIDC api SA)
+    agent->>FS: agent_sessions 조회/이어쓰기 (직접 R/W, 유일한 예외)
+    agent->>agent: submit_receipt_review 판단 (업무/개인, 재요청 여부) — 산술 없음
+    agent->>api: POST /agents/drafts (OIDC agent SA)
+    api->>FS: agent_drafts 기록
+    api->>Tasks: enqueue /tasks/apply-claimant-draft
+    Tasks->>api: POST /tasks/apply-claimant-draft (OIDC api SA)
+    api->>FS: receipts 상태 반영 (CONFIRMED | NEEDS_REQUERY)
+    opt 재요청 필요 (needs_requery=true)
+        api->>Tasks: enqueue /tasks/remind (지연 스케줄)
+        Tasks->>api: POST /tasks/remind
+        api->>Slack: DM 재요청 메시지 발송
+        api->>FS: claim_requests.status → REMINDED
+        Note over api,FS: PENDING → REMINDED → RESPONDED\|EXPIRED
+    end
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>3초 규칙:</b> <code>/slack/events</code>는 서명검증 → Firestore raw 저장 → enqueue까지만 하고 바로 200을 돌려준다. 실제 파싱은 Cloud Tasks 콜백(<code>/tasks/parse-receipt</code>)에서 비동기로 처리된다(<code>docs/rules/architecture.md</code> "비동기" 절).</li>
+        <li><b>이중 Gemini 호출 경로:</b> 이 파이프라인의 파싱은 <code>src/parsing/gemini.py</code>의 단발 구조화 출력이고, agent의 claimant 판단은 <code>agent/main.py</code>가 여는 별도의 ADK <code>Runner</code> 세션이다 — 서로 다른 신원(api SA vs agent SA)으로 Vertex AI를 호출한다.</li>
+        <li><b>멱등성:</b> <code>task_id</code>(예: <code>CLAIMANT:{receipt_id}</code>)가 <code>agent_drafts</code> 문서 ID가 되므로 Cloud Tasks 재시도로 같은 태스크가 중복 실행돼도 draft가 덮어써질 뿐 중복 생성되지 않는다.</li>
+        <li><b>agent → api 콜백 인증:</b> agent가 <code>/agents/drafts</code>·<code>/agents/audit</code>를 부를 때도 OIDC 토큰(agent SA 신원)을 쓰고, api가 이를 검증한다(<code>guards/oidc.py</code>) — 방향은 항상 <code>agent → api</code>이며 그 반대(api가 agent 결과를 기다리는 동기 호출)는 없다.</li>
+      </ul>
+    </div>
+    <a class="back-top" href="#top">↑ 위로</a>
+  </section>
+
+  <section id="settlement">
+    <h2><span class="badge">3. 정산·승인·송금 파이프라인</span> 실행 생성 → executor 분석 → 승인 게이트 → PayPal 송금 → 정산확인</h2>
+    <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    actor 집행자
+    participant web as web (BFF)
+    participant api as api (settlements/guards/payouts)
+    participant Gemini as Vertex AI (Gemini, 단발 재검증)
+    participant Tasks as Cloud Tasks
+    participant agent as agent (executor)
+    participant FS as Firestore
+    participant PayPal
+
+    집행자->>web: 정산 실행 생성
+    web->>api: POST /settlements/runs
+    api->>api: 결정론적 매칭 (금액·날짜윈도우·가맹점명) [TEMP(B)]
+    api->>Gemini: 후보 영수증 이미지 재검증 (동기, 300s 이내)
+    api->>FS: claims → IN_RUN, settlement_runs 생성 (DRAFT)
+    api->>Tasks: enqueue /agents/executor/analyze
+    api-->>web: run_id
+    Tasks->>agent: POST /agents/executor/analyze (OIDC api SA)
+    agent->>agent: 중복/미래날짜 탐지 서술 — 클러스터링은 code가 이미 완료
+    agent->>api: POST /agents/drafts (EXECUTOR)
+    api->>FS: agent_drafts 기록
+
+    집행자->>web: 실행 상세 조회
+    web->>api: GET /settlements/runs/{id}
+    api-->>web: claims + executor_analysis
+    Note over web,api: safety_report는 GET 응답에\n아직 연결 안 됨 (TODO)
+
+    집행자->>web: 승인 클릭
+    web->>api: POST /settlements/runs/{id}/approve
+    api->>FS: CAS DRAFT→APPROVED, FX lock, approval_token 발급(해시만 저장)
+    api-->>web: approval_token (route handler 스코프 안에서만)
+    web->>api: POST /payouts (X-Approval-Token 헤더, 토큰은 브라우저에 노출 안 됨)
+    api->>api: verify_and_burn_token — 해시·TTL(10분)·1회성 검증
+    api->>Tasks: enqueue /tasks/execute-payout
+    api->>Tasks: enqueue /tasks/reconcile (+30s)
+    Tasks->>api: POST /tasks/execute-payout (OIDC api SA)
+    api->>PayPal: POST /v1/payments/payouts (PayPal-Request-Id 멱등)
+    api->>FS: sender_items 기록
+    Tasks->>api: POST /tasks/reconcile
+    api->>PayPal: GET /v1/payments/payouts/{batch_id}
+    api->>FS: settlement_runs 최종 상태 갱신
+    alt 아직 pending
+        api->>Tasks: enqueue /tasks/reconcile (재예약)
+    end
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>절대 규칙 2가 그림에 보이는 지점:</b> <code>approval_token</code>은 <code>/api/settlements/runs/[id]/approve</code> route handler 안에서 발급받아 그 자리에서 바로 <code>/api/settlements/runs/[id]/payouts</code>(→ api <code>POST /payouts</code>)로 넘긴다 — 브라우저 응답 바디에는 토큰이 담기지 않고, 당연히 LLM(agent) 컨텍스트에도 들어가지 않는다(<code>frontend/.../approve/route.ts:4-10</code>).</li>
+        <li><b>승인 CAS 트랜잭션:</b> <code>guards/routes.py</code>의 <code>/settlements/runs/{id}/approve</code>는 Firestore 트랜잭션으로 DRAFT→APPROVED 조건부 전이 + FX 환율 고정 + 토큰 해시 저장을 한 번에 한다 — 중복 클릭으로 토큰이 두 번 발급되는 걸 막는다.</li>
+        <li><b>주황(부분구현):</b> <code>link_claims_to_run</code>(claim을 실행에 연결하는 단계)이 CAS 트랜잭션이 아니라 배치 쓰기다 — 코드 주석은 이 책임이 궁극적으로 guards(Track C) 쪽으로 와야 한다고 명시한다.</li>
+        <li><b>PayPal 멱등성:</b> <code>sender_batch_id</code>가 <code>run_id</code>에서 결정론적으로 파생되고 <code>PayPal-Request-Id</code> 헤더로 재시도 안전성을 확보한다 — Cloud Tasks가 같은 execute-payout 태스크를 재시도해도 중복 송금되지 않는다.</li>
+        <li><b>reconcile은 스스로 재예약한다:</b> PayPal 배치가 아직 처리 중이면 <code>/tasks/reconcile</code>이 자기 자신을 다시 enqueue한다(Pub/Sub이 아니라 Cloud Tasks <code>schedule_time</code>) — 상태 폴링을 위해 agent나 사람이 깨어있을 필요가 없다.</li>
+      </ul>
+    </div>
+    <a class="back-top" href="#top">↑ 위로</a>
+  </section>
+
+  <section id="auth">
+    <h2><span class="badge">4. 인증 · 멀티테넌시</span> Google 로그인(집행자) · Slack OAuth 설치(청구자 조직)</h2>
+    <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+    actor 집행자
+    participant web as web
+    participant api as api (auth)
+    participant Google
+    participant FS as Firestore
+
+    집행자->>web: /login — 조직명 입력, Google 로그인 클릭
+    web->>Google: authorization request (state=조직명)
+    Google-->>web: authorization code
+    web->>api: POST /api/auth/google/callback → POST /auth/google/callback
+    api->>Google: code → access_token (client_secret은 api만 보유)
+    api->>Google: userinfo (google_sub, email, name)
+    api->>FS: orgs·executors upsert, sessions 문서 생성 (해시 저장)
+    api-->>web: session_token (opaque, org_id 미포함)
+    web->>web: httpOnly 쿠키 payflow_session 저장 (24h)
+
+    Note over web,api: 이후 요청은 쿠키 → Authorization:Bearer 프록시
+    web->>api: (Bearer) 각종 API 호출
+    api->>FS: sessions 조회 → org_id 추출 (web은 org_id를 직접 못 읽음)
+
+    par Slack 워크스페이스 연결
+        집행자->>web: "Slack 연결" 클릭 (세션 필요)
+        web->>api: GET /auth/slack/install
+        api-->>web: Slack authorize_url (state=org_id)
+        web->>Slack: 리다이렉트
+        Slack-->>web: code
+        web->>api: POST /auth/slack/callback
+        api->>Slack: code → bot_token, team_id
+        api->>FS: slack_workspaces upsert (team_id → org_id, bot_token)
+        api->>Slack: users.list (워크스페이스 멤버 목록)
+        api->>Slack: 멤버별 온보딩 DM (PayPal 이메일 수집 안내, best-effort)
+    end
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>org_id는 두 경로로만 결정된다:</b> 집행자 쪽은 Google 로그인 세션(<code>sessions</code> Firestore 조회), 청구자 쪽은 Slack 이벤트의 <code>team_id</code> → <code>slack_workspaces</code> 조회. 요청 바디·쿼리파라미터의 org_id는 신뢰하지 않는다(<code>docs/rules/architecture.md</code> "org 스코핑과 로그인").</li>
+        <li><b>web은 org_id를 모른다:</b> 세션 토큰은 불투명한 값이고 <code>frontend/src/lib/session.ts</code>는 이를 그대로 <code>Authorization</code> 헤더로 전달만 한다 — org 스코핑 판단은 전부 api 계층에서 끝난다.</li>
+        <li><b>미등록 team_id 처리:</b> Slack 이벤트가 <code>/auth/slack/callback</code>보다 먼저 도착하면 <code>get_or_create_default_org_id()</code>가 데모용 기본 org를 만든다(<code>auth/store.py</code>) — 프로덕션에서는 명시적 워크스페이스 등록이 전제.</li>
+        <li><b>온보딩 DM은 2026-08-25 추가:</b> Slack OAuth 콜백이 <code>users.list</code>로 워크스페이스 멤버를 열거해(봇/앱 계정 필터링, 페이지네이션 처리) 각자에게 PayPal 이메일 등록을 요청하는 DM을 best-effort로 보낸다(<code>docs/journal/2026-08-25.md</code>).</li>
+      </ul>
+    </div>
+    <a class="back-top" href="#top">↑ 위로</a>
+  </section>
+
+  <section id="iam">
+    <h2><span class="badge">5. 런타임 IAM 신뢰 경계</span> 서비스 계정별 권한, invoker 제한, Secret Manager 경계</h2>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    subgraph SA_WEB["SA: payflow-web"]
+        WEBRUN["Cloud Run: payflow-web\ningress: public\nsecrets: 없음"]
+    end
+    subgraph SA_API["SA: payflow-api"]
+        APIRUN["Cloud Run: payflow-api\ningress: public\ninvoker: allUsers"]
+    end
+    subgraph SA_AGENT["SA: payflow-agent"]
+        AGENTRUN["Cloud Run: payflow-agent\ningress: 열려있음\ninvoker: payflow-api SA만"]
+    end
+
+    SEC[("Secret Manager\nPAYPAL_CLIENT_ID/SECRET\nSLACK_SIGNING_SECRET/BOT_TOKEN\nGOOGLE_CLIENT_ID/SECRET\nSLACK_APP_CLIENT_ID/SECRET")]
+    SA_API -->|secretAccessor: 8개 전부| SEC
+    SA_AGENT -.->|"secretAccessor 없음\n(바인딩 자체가 없음)"| SEC
+
+    SA_API -->|roles/aiplatform.user| VERTEX["Vertex AI"]
+    SA_AGENT -->|roles/aiplatform.user| VERTEX
+
+    SA_API -->|roles/datastore.user\n전체 컬렉션| FS[("Firestore")]
+    SA_AGENT -->|"roles/datastore.user\n코드로 agent_sessions만 접근"| FS
+
+    GCS[("GCS: {project}-receipts")]
+    SA_API -->|storage.objectAdmin\nimages/, raw_text/| GCS
+    SA_AGENT -->|"storage.objectViewer\nIAM condition: raw_text/ prefix만"| GCS
+
+    TASKS[("Cloud Tasks: payflow-queue")]
+    SA_API -->|cloudtasks.enqueuer| TASKS
+    TASKS -->|"OIDC(api SA), audience=api"| APIRUN
+    TASKS -->|"OIDC(api SA), audience=agent"| AGENTRUN
+    AGENTRUN -->|"OIDC(agent SA)\n/agents/drafts, /agents/audit"| APIRUN
+
+    APIRUN -->|PayPal Payouts API| PAYPAL["PayPal"]
+    AGENTRUN -.->|"호출 경로 없음"| PAYPAL
+
+    classDef done fill:#d1fae5,stroke:#059669,color:#065f46;
+    classDef pending fill:#f3f4f6,stroke:#9ca3af,color:#4b5563,stroke-dasharray: 4 3;
+    class WEBRUN,APIRUN,SEC,VERTEX,FS,GCS,TASKS,PAYPAL done
+    class AGENTRUN done
+</pre>
+    </div>
+    <div class="notes">
+      <ul>
+        <li><b>agent가 돈에 못 닿는 이유가 IAM 3중으로 걸려있다:</b> ① Secret Manager 바인딩 자체가 없어 PayPal 자격증명을 못 읽고, ② Firestore는 권한상 전체 컬렉션에 닿지만 <code>agent_sessions</code> 외 접근은 코드 컨벤션(<code>agent/shared/</code> 모듈 경계)으로만 막혀 있고, ③ PayPal API 호출 코드 자체가 agent 레포에 없다(grep 0건).</li>
+        <li><b>invoker 제한이 사실상의 진짜 게이트다:</b> agent 서비스는 ingress는 열려있지만(<code>INGRESS_TRAFFIC_ALL</code>) <code>run.invoker</code>가 api SA 하나에만 부여돼 있어(<code>iam.tf</code> <code>agent_invoker_api_only</code>), 외부에서 직접 HTTP로 agent를 부를 수 없다 — Cloud Tasks가 api SA 신원으로 발급한 OIDC 토큰이 유일한 진입 경로.</li>
+        <li><b>GCS 조건부 IAM (2026-08-25):</b> agent SA의 <code>objectViewer</code>는 <code>resource.name.startsWith(".../raw_text/")</code> 조건이 붙어 있어, 같은 버킷의 <code>images/</code>(원본 영수증 이미지)는 agent가 절대 읽을 수 없다 — claimant agent가 보는 건 OCR 텍스트뿐.</li>
+        <li>WIF/CI 배포 파이프라인(레포별 격리, deployer SA 권한)은 이 문서에서 다루지 않는다 — <a href="cicd-infra-diagrams.html">cicd-infra-diagrams.html</a> "전체 구조" 섹션 참조. 그 문서 작성(2026-08-20) 이후 추가된 변경: <code>payflow-terraform-admin</code> SA(2026-08-22), <code>orgs/executors/sessions/slack_workspaces</code> 스키마, GCS <code>raw_text/</code> 조건부 IAM(2026-08-25).</li>
+      </ul>
+    </div>
+    <a class="back-top" href="#top">↑ 위로</a>
+  </section>
+</main>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+</body>
+</html>
