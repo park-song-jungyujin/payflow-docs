@@ -341,6 +341,8 @@ dedup 문서는 계속 쌓인다. 이 규모에서는 무시해도 되고, 정�
 | `VERIFICATION_FAILED` | 이미지-파싱 결과 검증 실패 (`receipts.status = VERIFICATION_FAILED`) | 이미지와 내용이 안 맞으니 다시 확인해달라 |
 | `MISSING_CLAIM` | 결제 기록은 있는데 청구가 없음 | 청구 안 했는지 묻는다 |
 | `UNPAID_NOTICE` | 지급 결과 통지 — "10건 중 8건 지급, 2건 사유" | 재촉이 아니라 통지 |
+| `CLAIMANT_REVIEW_FAILED` | 청구자 에이전트(LLM)가 needs_requery=True로 판정 (`receipts.status = NEEDS_REQUERY`), 원인이 아래 DATE_MISSING처럼 세분화되지 않음 | 에이전트의 requery_message를 그대로 보낸다 |
+| `DATE_MISSING` | 거래일자 미검출을 코드가 결정론적으로 판정 (`parsing/pipeline.py`, 청구자 에이전트 미호출) | 날짜가 나오게 다시 찍어달라 |
 
 `reason`은 **분기 근거이지 문안이 아니다.** 문안 자체는 청구자 에이전트가 만든다.
 에이전트는 이 값을 읽기만 하고 쓰지 않는다 — 에이전트가 사유를 지어내는 경로는 없다.
