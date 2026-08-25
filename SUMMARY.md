@@ -75,3 +75,4 @@
 | 2026-08-25 | Slack 워크스페이스 설치 시 온보딩 DM 자동 발송 — `/auth/slack/callback`에서 `users.list`로 멤버 열거 후 각자에게 PayPal 이메일 등록 요청 DM 발송(best-effort) |
 | 2026-08-25 | 전체 아키텍처 다이어그램 보고서 작성 — `docs/reports/architecture-diagrams.html`, backend/agent/frontend/infra 코드 전수 조사 기반 Mermaid 5종(개요·인입·정산·인증·IAM) |
 | 2026-08-25 | Cloud Scheduler reconcile sweep 안전망 추가 — `POST /tasks/sweep-reconcile`이 5분마다 EXECUTING run 전체를 훑어 재예약 체인이 끊긴 건을 잡아냄. `feature/reconcile-sweep-cron` 브랜치, 미머지(payout 브랜치 게이트) |
+| 2026-08-25 | `tiered-memory-review.html` §8 계획 구현 — untrusted 턴 재주입 시 개별 래핑(Phase 1), `agent_sessions`·enqueue 두 곳에 org_id 스코핑 실배선(Phase 2). 에이전트 61·백엔드 620 passed |
