@@ -974,22 +974,25 @@ def approval_amount_hash(run: SettlementRun) -> str:
 | 에이전트 | 입력 | `agent_drafts.payload` |
 |---|---|---|
 | 청구자 | `receipt_id`, 파싱 JSON, `raw_text_gcs_uri` | `needs_requery: bool`, `requery_message: str`, `is_business: bool`, `reason: str` |
-| 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str` |
+| 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str`, `anomalies_ko: list[str]`, `summary_text_ko: str` |
 | 안전 확인 | `settlement_run` 스냅샷 | `risk_report: str` |
 
 세부 필드는 각 담당이 자기 에이전트 것만 채운다. 서로 부르지 않으므로 에이전트 간 계약은
 없다. `payload` 최상위 키만 위 표대로 맞춘다.
 
-**집행자의 `anomalies`·`summary_text`·반려 사유는 전부 영어다.** 해커톤 제출
-요건(README·데모는 영어) 때문에 팀 전체가 사용자 노출 텍스트를 영어로
-통일한 흐름의 일부다(Slack 발송 메시지 영어 전환과 같은 배경). 한때는
-`submit_settlement_analysis` 한 번의 호출에 한국어·영어를 모두 써서
-`anomalies_en`·`summary_text_en` 필드로 같이 보냈지만(그 전에는
-`api/src/guards/agent_drafts.py`가 draft를 받는 시점에 Gemma로 별도
-번역했다 — 순차 호출 최대 15초, `guards/translate.py`), 지금은 영어 한
-가지만 쓰므로 그 이중 작성·이중 필드 자체가 없다. 청구자(`requery_message_en`)는
-여전히 Gemma 번역 경로를 쓴다 — Slack DM은 한국어 폴백이 필요하지만 집행자
-출력은 web 전용이라 그럴 이유가 없다.
+**집행자의 `anomalies`·`summary_text`·반려 사유는 전부 영어가 기본이다.**
+해커톤 제출 요건(README·데모는 영어) 때문에 팀 전체가 사용자 노출 텍스트를
+영어로 통일한 흐름의 일부다(Slack 발송 메시지 영어 전환과 같은 배경).
+`anomalies_ko`·`summary_text_ko`는 `api/src/guards/agent_drafts.py`가
+draft를 받는 시점에 Gemma로 한국어 번역해 채우는 병행 필드다
+(`guards/translate.py.translate_lines(..., target_language="Korean")`).
+방향이 청구자(`requery_message`: 한국어 기본 → `requery_message_en`: Gemma가
+영어로 번역)와 정반대인 걸 주의 — 집행자는 영어가 기본이고 한국어가 Gemma
+번역이다. 한때는 이 Gemma 호출(순차 최대 15초, `guards/translate.py`)이
+분석 지연의 큰 부분이라 아예 없앤 적이 있다(에이전트가 영어·한국어를 같은
+턴에 함께 쓰는 방식) — 그 뒤 영어 단일언어로 다시 단순화했다가, 한국어
+표시가 필요하다는 판단으로 Gemma 번역을 다시 붙였다. 지연보다 한국어 표시가
+더 중요하다는 명시적 선택이다.
 
 **집행자가 사람이 읽을 텍스트 안에서 claim을 가리킬 때는 `short_id`를 쓴다.**
 `claim_id`(ULID)는 너무 길어 그대로 쓰면 안 된다 — web도 `claim_id`를 아예
