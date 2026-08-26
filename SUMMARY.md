@@ -98,3 +98,4 @@
 | 2026-08-25 | architecture-diagrams.html 리포트를 코드베이스 최신 상태(safety agent 배선, claims CAS 전환)로 갱신 |
 | 2026-08-26 | 거래일자 미검출 receipt 재요청을 청구자 에이전트(LLM) 확률적 판정에서 `parsing/pipeline.py` 코드 결정론적 규칙으로 전환 — `apply_claimant_verdict` 직접 호출로 needs_requery 확정, 재촬영 DM 즉시 발송 보장. 큐 인입 전 필터링은 3초 ack 제약상 TODO로 보류 |
 | 2026-08-26 | E2E(Cloud Run 로그) 확인 중 위 수정의 DM 미발송 버그 발견·수정 — `_requery_message`가 `agent_drafts`에서만 문안을 읽는데 새 코드 경로가 그 문서를 안 써서 조용히 무발송이던 것을 `write_agent_draft_document`로 해결. `claim_requests.reason` 하드코딩 `AMOUNT_MISMATCH` 버그도 같이 수정(`CLAIMANT_REVIEW_FAILED`/`DATE_MISSING` 추가) |
+| 2026-08-25 | 중복 청구·동일 영수증 재제출·미래 거래일 claim 전체 자동 반려 — `_apply_claim_exclusion` 신규(claim.amount_minor 안 건드리고 excluded 플래그만), 사람용 PATCH·agent용 POST reject-claims 라우트. 실제 지급 경로(승인 총액·해시·캡·PayPal 송금액·XLSX 합계·reconcile SETTLED 판정·Slack 통보) 전부에 excluded 필터링 배선. agent에 flag_suspicious_claims 툴 신규, INSTRUCTION에 유형1~3 예외없이 자동반려 명시. backend 727·agent 103 passed. 둘 다 미머지(브랜치 게이트) |

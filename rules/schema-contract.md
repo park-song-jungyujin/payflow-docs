@@ -369,6 +369,8 @@ fixture는 수정하지 않는다(§0). 시딩 데이터가 계약보다 뒤처�
 | `settlement_run_id` | str \| None | **점유 필드** |
 | `settled_at` | Timestamp \| None | |
 | `status` | enum | `DRAFT` / `CONFIRMED` / `IN_RUN` / `SETTLED` / `VOID` |
+| `excluded` | bool | nullable(기본 false). §9 "청구 반려 자동화" — claim 전체를 이번 배치 합계·PayPal 송금에서 뺀다. `amount_minor`는 안 건드린다(복원값 보존) |
+| `rejected_reason`, `rejected_by` | str \| None | `excluded=true`일 때만. `items[].rejected_reason`·`rejected_by`와 같은 패턴 |
 | `created_at`, `updated_at` | Timestamp | |
 
 **claim 점유는 CAS 트랜잭션이다.** 한 claim이 두 배치에 들어가면 이중 지급이다.
@@ -1003,6 +1005,28 @@ DRAFT 상태에서만 허용한다. 반려된 물품은 `receipts.items[i]`에
 `agent_drafts.payload.summary_text`("청구 반려 내역" 섹션)에도 사람이 읽을 문장으로
 같이 남는다.
 
+**청구 전체 반려(claim 층위)**: 이상징후 유형 1~3(영수증 고유번호 중복·중복
+청구·미래 거래일)은 물품 단위로 쪼갤 근거가 없다(품목 분해가 아예 없는 영수증도
+있다) — 코드가 이미 확정한 신호(`exact_duplicate_groups`·`duplicate_groups`·
+`check_future_dated_claims`)이므로 집행자는 해당 claim 전체를 예외 없이
+`flag_suspicious_claims` 툴로 반려한다(유형 4 "애매한 패턴"은 LLM 판단이라
+자동 반려 대상이 아니다). 이 툴은 `POST /agents/executor/reject-claims`를 불러
+`settlements/routes.py._apply_claim_exclusion`을 태운다 — 사람이 web
+체크박스로 claim 전체를 직접 반려하는 것(`PATCH
+/settlements/runs/{run_id}/claims/{claim_id}`)과 최종 효과가 같은 함수를
+공유한다.
+
+`claims.amount_minor`는 건드리지 않는다(§2 `claims` 참조) — 대신
+`claims.excluded`를 보고 다음 지점 전부가 그 claim을 뺀다: 승인 총액
+(`guards/routes.py._lock_fx_and_total`), 승인 해시(`guards/tokens.py.
+approval_amount_hash` — 실제 지급액과 어긋나면 안 된다), 한도 캡
+(`guards/limits.py.check_caps`), 실제 PayPal 송금액
+(`payouts/amounts.py.per_recipient_amounts`), 세무사 XLSX 합계
+(`settlements/export.py`). `payouts/reconcile.py.reconcile()`도 recipient가
+성공해도 그 recipient의 excluded claim은 `SETTLED`로 바꾸지 않고 `CONFIRMED`로
+되돌린다(재발송 전용으로 이 run에 그대로 묶어둔다 — "recipient 결과 없음"과
+같은 처리, 다른 run으로 풀어주는 기능은 없다).
+
 **Slack 통보**: `payouts/reconcile.py.reconcile()`(C)이 PayPal 송금이 실제로
 `SUCCESS`로 확정돼 claim을 `SETTLED`로 바꾼 직후, 그 recipient들에 한해
 `POST /tasks/notify-settlement-complete`(A, `ingest/routes.py`)를 enqueue한다.
@@ -1011,12 +1035,14 @@ DRAFT 상태에서만 허용한다. 반려된 물품은 `receipts.items[i]`에
 되돌린 반려까지 통보하게 된다. 송금까지 끝난 이 시점이라야 더는 안 바뀌는
 확정된 사실만 안전하게 전달할 수 있다.
 
-메시지는 "정산이 완료되었습니다"가 메인이고, 이번 run에서 제외된 물품이
-있으면 그 아래에 물품명·사유를 덧붙인다. 판단 기준은 `excluded: true`
-전체다 — 집행자 에이전트가 자동으로 뗀 것(`rejected_by: "EXECUTOR"`)과
-사람이 web 체크박스로 직접 뗀 것을 가리지 않는다(`summary_text`를 다시
-파싱하지 않고 `rejected_reason` 구조화 필드를 그대로 쓰고, 사람이 사유 없이
-뗀 항목은 일반 문구로 대체한다). 영어 로케일(Slack `users.info`)이면 발송
+메시지는 "정산이 완료되었습니다"가 메인이고, 이번 run에서 제외된 물품·claim이
+있으면 그 아래에 이름·사유를 덧붙인다. 판단 기준은 물품·claim 둘 다
+`excluded: true` 전체다 — 집행자 에이전트가 자동으로 뗀 것(`rejected_by:
+"EXECUTOR"`)과 사람이 web 체크박스로 직접 뗀 것을 가리지 않는다
+(`summary_text`를 다시 파싱하지 않고 `rejected_reason` 구조화 필드를 그대로
+쓰고, 사람이 사유 없이 뗀 항목은 일반 문구로 대체한다). claim 전체 반려는
+물품명이 없으니 가맹점명으로 "{merchant_name} 청구 전체"로 표시한다(가맹점명이
+없으면 "가맹점 미상"). 영어 로케일(Slack `users.info`)이면 발송
 시점에 Gemma로 번역한다 — `reject-items` 요청(agent → api, 10초 타임아웃)
 안에서 번역하면 그 예산을 갉아먹어 반려 자체가 실패할 위험이 있어 의도적으로
 여기로 미뤘다. `reconcile()`은 `/tasks/reconcile`·`/webhooks/paypal` 둘 다
@@ -1069,6 +1095,8 @@ LLM이 "기록을 남길지 말지"를 판단할 이유가 없는 순수 배관�
 | `POST /settlements/runs` | B | `api/src/settlements/` |
 | `GET  /settlements/runs/{run_id}` | B | `api/src/settlements/` |
 | `GET  /settlements/runs/{run_id}/export` | B | `api/src/settlements/` |
+| `PATCH /settlements/runs/{run_id}/claims/{claim_id}` | B | `api/src/settlements/` |
+| `POST /settlements/runs/{run_id}/executor-analysis/retry` | B | `api/src/settlements/` |
 | `POST /settlements/runs/{run_id}/approve` | C | **`api/src/guards/`** |
 | `POST /payouts` | C | `api/src/payouts/` |
 | `POST /payouts/{run_id}/retry` | C | `api/src/payouts/` |
@@ -1109,6 +1137,7 @@ Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에�
 | `POST /agents/drafts` | C | `api/src/guards/` |
 | `POST /agents/audit` | C | `api/src/guards/` |
 | `POST /agents/executor/reject-items` | B | `api/src/settlements/` |
+| `POST /agents/executor/reject-claims` | B | `api/src/settlements/` |
 
 ---
 
