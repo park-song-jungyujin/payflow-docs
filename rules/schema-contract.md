@@ -983,16 +983,32 @@ def approval_amount_hash(run: SettlementRun) -> str:
 **집행자의 `anomalies`·`summary_text`·반려 사유는 전부 영어가 기본이다.**
 해커톤 제출 요건(README·데모는 영어) 때문에 팀 전체가 사용자 노출 텍스트를
 영어로 통일한 흐름의 일부다(Slack 발송 메시지 영어 전환과 같은 배경).
-`anomalies_ko`·`summary_text_ko`는 `api/src/guards/agent_drafts.py`가
-draft를 받는 시점에 Gemma로 한국어 번역해 채우는 병행 필드다
-(`guards/translate.py.translate_lines(..., target_language="Korean")`).
+`anomalies_ko`·`summary_text_ko`는 Gemma가 한국어로 번역해 채우는 병행
+필드다(`guards/translate.py.translate_lines(..., target_language="Korean")`).
 방향이 청구자(`requery_message`: 한국어 기본 → `requery_message_en`: Gemma가
 영어로 번역)와 정반대인 걸 주의 — 집행자는 영어가 기본이고 한국어가 Gemma
-번역이다. 한때는 이 Gemma 호출(순차 최대 15초, `guards/translate.py`)이
-분석 지연의 큰 부분이라 아예 없앤 적이 있다(에이전트가 영어·한국어를 같은
-턴에 함께 쓰는 방식) — 그 뒤 영어 단일언어로 다시 단순화했다가, 한국어
-표시가 필요하다는 판단으로 Gemma 번역을 다시 붙였다. 지연보다 한국어 표시가
-더 중요하다는 명시적 선택이다.
+번역이다.
+
+**이 번역은 draft를 쓰는 요청과 완전히 분리된 비동기 Cloud Task다.**
+`agent_drafts.py.write_agent_draft_document`는 EXECUTOR draft를 영어
+그대로 즉시 커밋하고, 그 직후 `_enqueue_executor_translation`이
+`POST /tasks/translate-executor-draft`를 큐잉한다(요청 본문에 번역 대상
+영어 원문을 그대로 실어 보낸다 — Firestore를 다시 읽지 않는다). Gemma
+호출은 그 태스크 안에서, 즉 원래 요청이 이미 끝난 뒤 일어난다. 이 태스크는
+쓰기 직전 Firestore의 현재 `payload.summary_text`와 자신이 번역한 원문을
+대조해서, 다르면(그 사이 재분석이 같은 task_id로 새 draft를 덮어썼다는
+뜻) 쓰지 않고 조용히 버린다 — 낡은 번역이 새 영어 내용에 잘못 붙는 사고를
+막는다. web은 영어를 먼저 보여주고, `frontend/src/app/runs/[runId]/status-poller.tsx`가
+`anomalies_ko`/`summary_text_ko`가 비어 있는 동안 짧게(최대 8회, 5초
+간격) 더 폴링해 번역이 도착하면 한국어로 바뀐다 — Gemma 실패는 조용히
+무시하는 원칙이라 영영 안 채워질 수도 있어 폴링에 상한을 둔다.
+
+한때는 이 Gemma 호출이 `submit_settlement_analysis` 요청 경로 안에서
+동기로 일어나 최대 15초 순차 지연을 만들었다 — 그 지연 때문에 아예
+없앤 적도 있고(에이전트가 영어·한국어를 같은 턴에 함께 쓰는 방식), 그 뒤
+영어 단일언어로 단순화했다가, 한국어 표시가 필요하다는 판단으로 다시
+붙였다. 지금의 비동기 방식이 "지연 없음"과 "한국어 표시" 둘 다를 만족하는
+최종 형태다.
 
 **집행자가 사람이 읽을 텍스트 안에서 claim을 가리킬 때는 `short_id`를 쓴다.**
 `claim_id`(ULID)는 너무 길어 그대로 쓰면 안 된다 — web도 `claim_id`를 아예
@@ -1174,6 +1190,7 @@ Slack은 Event Subscriptions URL과 Interactivity Request URL을 앱 설정에�
 | `POST /tasks/notify-settlement-complete` | A | `api/src/ingest/` |
 | `POST /tasks/execute-payout` | C | `api/src/payouts/` |
 | `POST /tasks/reconcile` | C | `api/src/payouts/` |
+| `POST /tasks/translate-executor-draft` | B | `api/src/guards/agent_drafts.py` |
 
 ### agent 전용 (OIDC 필수, agent 서비스 계정이 직접 호출 — Cloud Tasks 경유 아님)
 
