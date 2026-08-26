@@ -116,3 +116,4 @@
 | 2026-08-26 | Gemma 응답 파싱 견고화 — 코드펜스·산문 래핑·객체 래핑·배열 없는 단일 문자열을 흡수해 남은 번역 경로(가맹점명·품목명, 집행자 한국어)의 간헐 실패를 줄임. 실패 로그에 응답 원문을 남기는 진단 커밋을 먼저 분리(08-25 조사에서 원인 특정에 실패했던 이유). 모델 거절 문구가 DM으로 나가는 걸 막으려 따옴표 없는 산문은 의도적으로 거부. backend 776 passed. 실제 실패 원문 미확보라 검증은 배포 후 |
 | 2026-08-26 | 영수증 가맹점명·품목명을 파싱 시점에 Gemma로 영어 번역해 저장(merchant_name_en·items[].name_en) — 집행자 서술·Slack 문구를 영어로 통일한 뒤에도 영수증에서 읽은 이름만 한국어로 남던 자리. 가맹점명과 품목명을 한 번의 호출로 묶어 15초 대기가 두 번 붙는 걸 방지. web은 en 로케일에서 번역명을 쓰고 가맹점명만 회색 한 줄로 원문 병기. backend 769·frontend 22 passed. 미머지 |
 | 2026-08-26 | 집행자 에이전트가 api의 방향 반전을 못 받아 영어 자리에 한국어를 넣고 있던 문제 수정 — anomalies·summary_text를 영어로 직접 쓰고 죽은 anomalies_en·summary_text_en 파라미터 제거. web en 로케일에 한국어 이상징후가 그대로 나오고 한국어 번역 태스크가 한국어를 한국어로 번역하던 원인. agent 106 passed. 미머지 |
+| 2026-08-27 | Cloud Run 로그에서 발견한 `/agents/executor/reject-items` 500(AttributeError) 수정 — 요청 body를 raw dict에서 Pydantic 모델로 전환, 잘못된 형태의 rejections 원소는 422로 거절. 같은 패턴의 reject-claims도 함께 수정. backend 792 passed |
