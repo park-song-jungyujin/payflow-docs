@@ -969,11 +969,28 @@ def approval_amount_hash(run: SettlementRun) -> str:
 | 에이전트 | 입력 | `agent_drafts.payload` |
 |---|---|---|
 | 청구자 | `receipt_id`, 파싱 JSON, `raw_text_gcs_uri` | `needs_requery: bool`, `requery_message: str`, `is_business: bool`, `reason: str` |
-| 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str` |
+| 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `anomalies_en: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str`, `summary_text_en: str` |
 | 안전 확인 | `settlement_run` 스냅샷 | `risk_report: str` |
 
 세부 필드는 각 담당이 자기 에이전트 것만 채운다. 서로 부르지 않으므로 에이전트 간 계약은
 없다. `payload` 최상위 키만 위 표대로 맞춘다.
+
+**집행자의 영어 필드(`anomalies_en`·`summary_text_en`)는 에이전트가 직접 쓴다.**
+이전에는 `api/src/guards/agent_drafts.py`가 draft를 받는 시점에 Gemma로 별도
+번역해 채웠는데, 그 순차 호출(최대 15초, `guards/translate.py`)이
+`submit_settlement_analysis` 이후 요청을 끝까지 막고 있어 분석 지연의 큰 부분을
+차지했다 — 지금은 집행자 에이전트가 `submit_settlement_analysis` 한 번의 호출로
+한국어·영어를 함께 써서 보내고(`executor/tools.py`), `agent_drafts.py`는 그대로
+통과시키기만 한다. 청구자(`requery_message_en`)는 여전히 Gemma 번역 경로를 쓴다
+— 지연 문제가 있는 지점은 집행자뿐이었다.
+
+**집행자의 `future_dated_claims`도 이제 `api`가 미리 계산해 보낸다.** 원래는
+집행자 에이전트가 분석 도중 `check_future_dated_claims` 툴을 호출해 판정받았는데,
+매번 별도 tool-call 왕복(그 안의 네트워크 지연)이 붙었다 — `duplicate_groups`·
+`exact_duplicate_groups`와 같은 자리(정산 실행 생성 시점, `api/src/matching/
+future_dated.py`)에서 미리 계산해 태스크 본문에 실어 보낸다. 날짜 산술을 LLM이
+스스로 하지 않는다는 원칙(agent-tools.md)은 그대로다 — "언제" 계산하는지만
+바뀌었다.
 
 **집행자의 "후보 `claims` 목록"은 검증을 통과한 receipt에 물린 claim만 포함한다.**
 연결된 `receipts.verified_at`이 `None`이거나 `status = VERIFICATION_FAILED`인 claim은
@@ -1008,13 +1025,22 @@ DRAFT 상태에서만 허용한다. 반려된 물품은 `receipts.items[i]`에
 **청구 전체 반려(claim 층위)**: 이상징후 유형 1~3(영수증 고유번호 중복·중복
 청구·미래 거래일)은 물품 단위로 쪼갤 근거가 없다(품목 분해가 아예 없는 영수증도
 있다) — 코드가 이미 확정한 신호(`exact_duplicate_groups`·`duplicate_groups`·
-`check_future_dated_claims`)이므로 집행자는 해당 claim 전체를 예외 없이
-`flag_suspicious_claims` 툴로 반려한다(유형 4 "애매한 패턴"은 LLM 판단이라
-자동 반려 대상이 아니다). 이 툴은 `POST /agents/executor/reject-claims`를 불러
-`settlements/routes.py._apply_claim_exclusion`을 태운다 — 사람이 web
-체크박스로 claim 전체를 직접 반려하는 것(`PATCH
-/settlements/runs/{run_id}/claims/{claim_id}`)과 최종 효과가 같은 함수를
-공유한다.
+`future_dated_claims`)이므로 집행자는 해당 claim 전체를 예외 없이 `flag_claims`
+툴로 반려한다(유형 4 "애매한 패턴"은 LLM 판단이라 자동 반려 대상이 아니다). 이
+툴은 신호 강도에 따라 내부적으로 두 api를 나눠 부른다:
+- `already_settled_claim_ids`(이미 송금 완료된 영수증의 재청구, 가장 확실한
+  신호) → `POST /agents/executor/reject-items`(claim에 딸린 모든
+  item_index를 반려해 `amount_minor`를 0으로 만든다 —
+  `_apply_item_exclusion` 재사용).
+- `other_rejections`(같은 배치 내 중복·미래 거래일) → `POST
+  /agents/executor/reject-claims`(`settlements/routes.py._apply_claim_exclusion`
+  — `claims.excluded`만 세우고 `amount_minor`는 건드리지 않는다).
+
+호출은 항상 한 번이다(LLM 턴 절약) — 두 인자 중 해당 없는 쪽은 빈 리스트로
+넘긴다. 사람이 web 체크박스로 물품 하나 또는 claim 전체를 직접 반려하는 것
+(`PATCH /settlements/runs/{run_id}/claims/{claim_id}/items/{item_index}`,
+`PATCH /settlements/runs/{run_id}/claims/{claim_id}`)과 최종 효과가 같은
+함수를 공유한다.
 
 `claims.amount_minor`는 건드리지 않는다(§2 `claims` 참조) — 대신
 `claims.excluded`를 보고 다음 지점 전부가 그 claim을 뺀다: 승인 총액
