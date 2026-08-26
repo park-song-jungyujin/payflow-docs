@@ -124,9 +124,11 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 | `slack_channel_id` | str \| None | 영수증을 올린 원 메시지의 채널 |
 | `slack_message_ts` | str \| None | 같은 메시지의 ts. 스레드 답글의 `thread_ts`로 넣는다 |
 | `merchant_name` | str \| None | 마스킹 후 값. 결정론적 매칭이 쓴다 |
+| `merchant_name_en` | str \| None | `merchant_name`의 영어 번역. 아래 "이름 번역" 참조 |
 | `transaction_date` | date \| None | **결제일.** `created_at`(업로드 시각)과 다르다 |
 | `parsed_amount_minor` | int \| None | |
 | `currency` | str \| None | |
+| `items` | list[map] | 영수증 품목. 아래 "품목(`items`)" 참조 |
 | `account_category_code` | enum \| None | §5 |
 | `category_source` | enum \| None | `LLM_PARSE` / `DETERMINISTIC_FALLBACK` / `EXECUTOR_AGENT` / `HUMAN` |
 | `parse_signals` | map \| None | §5 |
@@ -138,6 +140,53 @@ PayFlow 세 레포(`payflow-backend` · `payflow-agent` · `payflow-frontend`)�
 
 **PII 마스킹은 Firestore 쓰기 전에 한다.** Firestore에 들어가는 값은 전부 마스킹 후이고,
 원문은 `image_gcs_uri`와 `raw_text_gcs_uri`로만 접근한다.
+
+**품목(`items`)** — 영수증에 개별 품목이 인쇄돼 있으면 한 줄씩 담는다. 없거나
+못 읽으면 빈 리스트이고, 그것도 정상 파싱이다(정산 판단은 영수증 전체 금액
+기준이다).
+
+| 필드 | 타입 | 비고 |
+|---|---|---|
+| `name` | str | 영수증에서 읽은 품목명(마스킹 후). 원문이라 거의 항상 한국어다 |
+| `name_en` | str \| None | `name`의 영어 번역. 없을 수 있다 — 아래 참조 |
+| `amount_minor` | int \| None | 품목 금액. 영수증 전체와 같은 `currency`를 쓴다 |
+| `excluded` | bool | nullable(기본 false). §9 "청구 반려 자동화" |
+| `rejected_reason`, `rejected_by` | str \| None | `excluded=true`일 때만 |
+
+**이름 번역(`merchant_name_en`·`items[].name_en`)** — 파싱 시점에 Gemma가
+채운다(`api/src/parsing/pipeline.py._translate_receipt_names` →
+`guards/translate.py.translate_lines`). web 대시보드가 `en` 로케일에서 이 값을
+보여준다 — 집행자 서술·Slack 발송 문구를 영어로 통일한 뒤에도 영수증에서 읽은
+이름만 한국어로 남아 있던 자리다.
+
+**가맹점명과 품목명을 한 번의 Gemma 호출로 묶는다** — 따로 부르면 최대
+15초(`translate.py._TIMEOUT_MS`)짜리 대기가 파싱 태스크에 두 번 순차로 붙는다.
+가맹점명이 항상 첫 줄이고 품목명이 그 뒤를 원래 순서대로 잇는다. 이 호출은
+Cloud Tasks가 부르는 파싱 태스크(`POST /tasks/parse-receipt`) 안에서 일어나
+사용자 요청 경로에는 지연이 붙지 않는다. 가맹점명도 품목도 못 읽은 영수증에는
+호출 자체를 생략한다.
+
+**Gemma에 넘기는 건 마스킹 뒤의 이름이다** — 원문을 그대로 보내면 "마스킹은
+Firestore 쓰기 전"이라는 이 절의 전제가 외부 호출 하나로 우회된다. 번역도
+마스킹된 원문의 번역이어야 원문과 짝이 맞는다.
+
+**번역이 없는 상태가 정상 경로로 존재한다**: 번역 실패(번역은 조언성 부가
+기능이라 조용히 흡수되고 파싱을 막지 않는다)와 이 필드가 생기기 전에 파싱된
+영수증. `merchant_name_en`은 `None`이고 `name_en`은 키 자체가 없다 — 읽는 쪽은
+둘 다 원문으로 폴백한다(`frontend/src/lib/receiptText.ts`). **기존 문서 백필은
+하지 않는다** — 이미 파싱된 영수증은 재파싱 전까지 원문만 갖는다.
+
+**web은 가맹점명만 원문을 함께 보여준다** — 번역명을 먼저 쓰고 그 아래 회색
+한 줄로 영수증에 찍힌 상호를 괄호에 넣어 덧붙인다(`merchantDisplay`). 영수증·
+카드 명세와 대조하는 사람이 실제 상호를 봐야 하고, 상호 번역은 음차라 원문
+없이는 어느 가게인지 특정이 안 되는 경우가 많다. 번역이 원문과 같으면(원래
+영어 상호) 괄호 줄을 그리지 않는다. 품목은 표에서 한 줄로 촘촘히 그려서 원문을
+함께 적지 않는다.
+
+**두 필드 다 web 전용이다** — 집행자 에이전트에게 보내는 `_claim_summary`
+(§6 나가는 필드 최소화)에는 넣지 않는다. 에이전트는 이미 영어로 서술하고,
+안 쓰는 필드는 인젝션 표면만 넓힌다. `settlements/routes.py`의 `_run_claims`·
+`list_unsettled_claims`가 `items`와 같은 자리에서 얹는다.
 
 `slack_channel_id`·`slack_message_ts`는 **업로드된 원 메시지의 좌표**다. "파싱했습니다,
 이게 맞나요?" 카드를 그 메시지 스레드에 답글로 붙이는 데 쓴다. `claim_requests.slack_dm_ts`는
