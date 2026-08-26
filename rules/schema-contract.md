@@ -974,20 +974,30 @@ def approval_amount_hash(run: SettlementRun) -> str:
 | 에이전트 | 입력 | `agent_drafts.payload` |
 |---|---|---|
 | 청구자 | `receipt_id`, 파싱 JSON, `raw_text_gcs_uri` | `needs_requery: bool`, `requery_message: str`, `is_business: bool`, `reason: str` |
-| 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `anomalies_en: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str`, `summary_text_en: str` |
+| 집행자 | 자연어 문자열, 후보 `claims` 목록 | `filter: SettlementFilter`, `anomalies: list[str]`, `recategorized: list[{claim_id, code}]`, `summary_text: str` |
 | 안전 확인 | `settlement_run` 스냅샷 | `risk_report: str` |
 
 세부 필드는 각 담당이 자기 에이전트 것만 채운다. 서로 부르지 않으므로 에이전트 간 계약은
 없다. `payload` 최상위 키만 위 표대로 맞춘다.
 
-**집행자의 영어 필드(`anomalies_en`·`summary_text_en`)는 에이전트가 직접 쓴다.**
-이전에는 `api/src/guards/agent_drafts.py`가 draft를 받는 시점에 Gemma로 별도
-번역해 채웠는데, 그 순차 호출(최대 15초, `guards/translate.py`)이
-`submit_settlement_analysis` 이후 요청을 끝까지 막고 있어 분석 지연의 큰 부분을
-차지했다 — 지금은 집행자 에이전트가 `submit_settlement_analysis` 한 번의 호출로
-한국어·영어를 함께 써서 보내고(`executor/tools.py`), `agent_drafts.py`는 그대로
-통과시키기만 한다. 청구자(`requery_message_en`)는 여전히 Gemma 번역 경로를 쓴다
-— 지연 문제가 있는 지점은 집행자뿐이었다.
+**집행자의 `anomalies`·`summary_text`·반려 사유는 전부 영어다.** 해커톤 제출
+요건(README·데모는 영어) 때문에 팀 전체가 사용자 노출 텍스트를 영어로
+통일한 흐름의 일부다(Slack 발송 메시지 영어 전환과 같은 배경). 한때는
+`submit_settlement_analysis` 한 번의 호출에 한국어·영어를 모두 써서
+`anomalies_en`·`summary_text_en` 필드로 같이 보냈지만(그 전에는
+`api/src/guards/agent_drafts.py`가 draft를 받는 시점에 Gemma로 별도
+번역했다 — 순차 호출 최대 15초, `guards/translate.py`), 지금은 영어 한
+가지만 쓰므로 그 이중 작성·이중 필드 자체가 없다. 청구자(`requery_message_en`)는
+여전히 Gemma 번역 경로를 쓴다 — Slack DM은 한국어 폴백이 필요하지만 집행자
+출력은 web 전용이라 그럴 이유가 없다.
+
+**집행자가 사람이 읽을 텍스트 안에서 claim을 가리킬 때는 `short_id`를 쓴다.**
+`claim_id`(ULID)는 너무 길어 그대로 쓰면 안 된다 — web도 `claim_id`를 아예
+보여주지 않으므로 사람이 대조할 방법이 없다. `_enqueue_executor_analysis`가
+`claim_id`의 마지막 8자를 미리 잘라 candidate_claims 각 항목에 `short_id`로
+실어 보낸다(LLM이 직접 문자열을 잘라내면 날짜 산술과 같은 이유로 틀리기
+쉬워 코드가 결정론적으로 만든다). `summary_text`의 "Rejected items" 목록은
+`#{short_id}: reason` 형식을 쓴다.
 
 **집행자의 `future_dated_claims`도 이제 `api`가 미리 계산해 보낸다.** 원래는
 집행자 에이전트가 분석 도중 `check_future_dated_claims` 툴을 호출해 판정받았는데,
@@ -1024,8 +1034,9 @@ future_dated.py`)에서 미리 계산해 태스크 본문에 실어 보낸다. �
 DRAFT 상태에서만 허용한다. 반려된 물품은 `receipts.items[i]`에
 `excluded: true`·`rejected_reason`·`rejected_by: "EXECUTOR"`로 남는다 — 사람이
 승인 전까지 web에서 언제든 되돌릴 수 있는 잠정 상태다. 반려 내역과 사유는
-`agent_drafts.payload.summary_text`("청구 반려 내역" 섹션)에도 사람이 읽을 문장으로
-같이 남는다.
+`agent_drafts.payload.summary_text`("Rejected items" 섹션, 영어)에도 사람이
+읽을 문장으로 같이 남는다 — claim 전체 반려 줄은 `#{short_id}: reason`,
+물품 반려 줄은 `item name: reason` 형식이다.
 
 **청구 전체 반려(claim 층위)**: 이상징후 유형 1~3(영수증 고유번호 중복·중복
 청구·미래 거래일)은 물품 단위로 쪼갤 근거가 없다(품목 분해가 아예 없는 영수증도
