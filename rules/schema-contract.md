@@ -1029,14 +1029,40 @@ def approval_amount_hash(run: SettlementRun) -> str:
 세부 필드는 각 담당이 자기 에이전트 것만 채운다. 서로 부르지 않으므로 에이전트 간 계약은
 없다. `payload` 최상위 키만 위 표대로 맞춘다.
 
-**집행자의 `anomalies`·`summary_text`·반려 사유는 전부 영어가 기본이다.**
-해커톤 제출 요건(README·데모는 영어) 때문에 팀 전체가 사용자 노출 텍스트를
-영어로 통일한 흐름의 일부다(Slack 발송 메시지 영어 전환과 같은 배경).
-`anomalies_ko`·`summary_text_ko`는 Gemma가 한국어로 번역해 채우는 병행
-필드다(`guards/translate.py.translate_lines(..., target_language="Korean")`).
-방향이 청구자(`requery_message`: 한국어 기본 → `requery_message_en`: Gemma가
-영어로 번역)와 정반대인 걸 주의 — 집행자는 영어가 기본이고 한국어가 Gemma
-번역이다.
+**사람에게 나가는 에이전트 출력은 전부 영어가 기본이다.** 해커톤 제출
+요건(README·데모는 영어) 때문에 팀 전체가 사용자 노출 텍스트를 영어로 통일한
+흐름의 일부다(Slack 발송 메시지 영어 전환과 같은 배경).
+
+| 필드 | 쓰는 주체 | 언어 |
+|---|---|---|
+| 집행자 `anomalies`·`summary_text`·반려 사유 | 집행자 에이전트 | 영어 |
+| 집행자 `anomalies_ko`·`summary_text_ko` | api (Gemma 번역, 비동기) | 한국어 |
+| 청구자 `requery_message` | 청구자 에이전트 / `parsing/pipeline.py` | 영어 |
+| 청구자 `reason` | 청구자 에이전트 | 무관 (감사 로그용 내부 기록) |
+
+**청구자 `requery_message`에는 번역이 없다.** 에이전트가 처음부터 영어로
+쓰고, `ingest/routes.py._requery_message`가 그 값을 Slack DM 본문으로 그대로
+내보낸다. 거래일자 미검출처럼 청구자 에이전트를 거치지 않고 코드가 직접 문안을
+만드는 경로(`parsing/pipeline.py`)도 같은 계약이다.
+
+한때는 청구자가 한국어로 쓰고 `agent_drafts.py`가 draft 쓰기 시점에 Gemma로
+번역해 `requery_message_en`을 채웠다. **그 번역이 간헐적으로 실패하면 조용히
+한국어 원문으로 폴백해**(실패를 흡수하는 게 `translate.py`의 설계다) 같은
+재요청 문구가 어떤 영수증에는 영어로, 어떤 영수증에는 한국어로 Slack에
+도착했다. 재요청 사유는 (a) 금액 없음 (b) 거래일자 없음 (c) 원문·파싱 모순
+셋뿐이라 LLM 번역을 한 번 더 태울 값어치가 없어, 번역할 이유 자체를 없앴다 —
+draft 쓰기 요청에 붙던 최대 15초(`translate.py._TIMEOUT_MS`)도 같이 사라졌다.
+
+`requery_message_en`은 **더 이상 만들어지지 않는 필드**다. `_requery_message`가
+아직 그걸 먼저 보는 건 이 전환 전에 이미 Firestore에 쓰인 draft 때문이다(그
+문서들은 원본이 한국어다). 남은 문서가 정리되기 전에 읽기까지 지우면 그
+영수증들만 한국어로 되돌아간다.
+
+집행자는 방향이 반대다 — 영어가 기본이고 한국어(`anomalies_ko`·
+`summary_text_ko`)가 Gemma 번역이다
+(`guards/translate.py.translate_lines(..., target_language="Korean")`).
+집행자 쪽 번역은 실패해도 web에 영어가 그대로 보일 뿐이라 Slack DM처럼
+눈에 띄는 사고가 없고, 아래와 같이 요청 경로 밖의 비동기 태스크다.
 
 **이 번역은 draft를 쓰는 요청과 완전히 분리된 비동기 Cloud Task다.**
 `agent_drafts.py.write_agent_draft_document`는 EXECUTOR draft를 영어
