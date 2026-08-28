@@ -117,3 +117,4 @@
 | 2026-08-26 | 영수증 가맹점명·품목명을 파싱 시점에 Gemma로 영어 번역해 저장(merchant_name_en·items[].name_en) — 집행자 서술·Slack 문구를 영어로 통일한 뒤에도 영수증에서 읽은 이름만 한국어로 남던 자리. 가맹점명과 품목명을 한 번의 호출로 묶어 15초 대기가 두 번 붙는 걸 방지. web은 en 로케일에서 번역명을 쓰고 가맹점명만 회색 한 줄로 원문 병기. backend 769·frontend 22 passed. 미머지 |
 | 2026-08-26 | 집행자 에이전트가 api의 방향 반전을 못 받아 영어 자리에 한국어를 넣고 있던 문제 수정 — anomalies·summary_text를 영어로 직접 쓰고 죽은 anomalies_en·summary_text_en 파라미터 제거. web en 로케일에 한국어 이상징후가 그대로 나오고 한국어 번역 태스크가 한국어를 한국어로 번역하던 원인. agent 106 passed. 미머지 |
 | 2026-08-27 | Cloud Run 로그에서 발견한 `/agents/executor/reject-items` 500(AttributeError) 수정 — 요청 body를 raw dict에서 Pydantic 모델로 전환, 잘못된 형태의 rejections 원소는 422로 거절. 같은 패턴의 reject-claims도 함께 수정. backend 792 passed |
+| 2026-08-28 | 대시보드 Requester에 Slack ID가 그대로 뜨던 문제 수정 — `get_display_name`·`get_user_locale`이 워크스페이스별 봇 토큰 대신 전역 토큰만 써서 다른 워크스페이스 사용자 조회가 실패하던 것. Firestore 기존 recipient 2건도 수동 백필. backend 792 passed |
