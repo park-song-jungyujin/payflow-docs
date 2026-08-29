@@ -118,4 +118,5 @@
 | 2026-08-26 | 집행자 에이전트가 api의 방향 반전을 못 받아 영어 자리에 한국어를 넣고 있던 문제 수정 — anomalies·summary_text를 영어로 직접 쓰고 죽은 anomalies_en·summary_text_en 파라미터 제거. web en 로케일에 한국어 이상징후가 그대로 나오고 한국어 번역 태스크가 한국어를 한국어로 번역하던 원인. agent 106 passed. 미머지 |
 | 2026-08-27 | Cloud Run 로그에서 발견한 `/agents/executor/reject-items` 500(AttributeError) 수정 — 요청 body를 raw dict에서 Pydantic 모델로 전환, 잘못된 형태의 rejections 원소는 422로 거절. 같은 패턴의 reject-claims도 함께 수정. backend 792 passed |
 | 2026-08-28 | 대시보드 Requester에 Slack ID가 그대로 뜨던 문제 수정 — `get_display_name`·`get_user_locale`이 워크스페이스별 봇 토큰 대신 전역 토큰만 써서 다른 워크스페이스 사용자 조회가 실패하던 것. Firestore 기존 recipient 2건도 수동 백필. backend 792 passed
-| 2026-08-28 | test_org_2 재촉 DM 미발송 hotfix — `task_remind`가 워크스페이스별 봇 토큰 없이 전역 토큰으로 발송해 `channel_not_found`로 조용히 실패하던 것 수정. main 직접 push(`94c335e`), backend 792 passed |
+| 2026-08-28 | test_org_2 재촉 DM 미발송 hotfix — `task_remind`가 워크스페이스별 봇 토큰 없이 전역 토큰으로 발송해 `channel_not_found`로 조용히 실패하던 것 수정. main 직접 push(`94c335e`), backend 792 passed
+| 2026-08-29 | GitHub org 이전(park-song-jungyujin → payflow737) — 4개 레포 remote 갱신, docs hard reset. WIF `attribute_condition` 하드코딩으로 fe/be/agent 배포 전부 실패한 것 발견, backend PR #71 + terraform apply로 GCP IAM 갱신 후 3개 레포 배포 재확인 | |
